@@ -48,7 +48,7 @@ func TestHookExecution(t *testing.T) {
 	}
 
 	// Test OnHit hook
-	cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", "value1", time.Hour)
 	_, found = cache.Get("key1")
 	if !found {
 		t.Fatal("Expected hit")
@@ -58,15 +58,15 @@ func TestHookExecution(t *testing.T) {
 	}
 
 	// Test OnInvalidate hook
-	cache.Delete("key1")
+	_ = cache.Delete("key1")
 	if atomic.LoadInt32(&invalidateCount) != 1 {
 		t.Fatalf("Expected 1 invalidate hook call, got %d", invalidateCount)
 	}
 
 	// Test OnEvict hook
-	cache.Set("key2", "value2", time.Hour)
-	cache.Set("key3", "value3", time.Hour)
-	cache.Set("key4", "value4", time.Hour) // Should evict key2 (LRU)
+	_ = cache.Set("key2", "value2", time.Hour)
+	_ = cache.Set("key3", "value3", time.Hour)
+	_ = cache.Set("key4", "value4", time.Hour) // Should evict key2 (LRU)
 
 	// Give some time for eviction to be processed
 	time.Sleep(10 * time.Millisecond)
@@ -108,7 +108,7 @@ func TestHookParameters(t *testing.T) {
 	testKey := "test-key"
 	testValue := "test-value"
 
-	cache.Set(testKey, testValue, time.Hour)
+	_ = cache.Set(testKey, testValue, time.Hour)
 	cache.Get(testKey)
 
 	mu.Lock()
@@ -124,7 +124,7 @@ func TestHookParameters(t *testing.T) {
 	mu.Unlock()
 
 	// Test evict hook parameters
-	cache.Set("new-key", "new-value", time.Hour) // Should evict previous entry
+	_ = cache.Set("new-key", "new-value", time.Hour) // Should evict previous entry
 	time.Sleep(10 * time.Millisecond)
 
 	mu.Lock()
@@ -165,13 +165,13 @@ func TestHookConcurrency(t *testing.T) {
 
 	// Add some data
 	for i := 0; i < 10; i++ {
-		cache.Set(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i), time.Hour)
+		_ = cache.Set(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i), time.Hour)
 	}
 
 	// Concurrent cache operations to trigger hooks
 	var wg sync.WaitGroup
-	numGoroutines := 50
-	numOperations := 100
+	const numGoroutines = 50
+	const numOperations = 100
 
 	wg.Add(numGoroutines)
 	for i := 0; i < numGoroutines; i++ {
@@ -220,7 +220,7 @@ func TestMultipleHooksOfSameType(t *testing.T) {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
 
-	cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", "value1", time.Hour)
 	cache.Get("key1")
 
 	if atomic.LoadInt32(&hook1Calls) != 1 {
@@ -287,10 +287,10 @@ func TestNilHooks(t *testing.T) {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
 
-	cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", "value1", time.Hour)
 	cache.Get("key1")
 	cache.Get("nonexistent")
-	cache.Delete("key1")
+	_ = cache.Delete("key1")
 
 	// If we reach here without panic, test passes
 }
@@ -303,10 +303,10 @@ func TestEmptyHooks(t *testing.T) {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
 
-	cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", "value1", time.Hour)
 	cache.Get("key1")
 	cache.Get("nonexistent")
-	cache.Delete("key1")
+	_ = cache.Delete("key1")
 
 	// If we reach here without panic, test passes
 }
@@ -325,7 +325,7 @@ func TestHookErrorHandling(t *testing.T) {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
 
-	cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", "value1", time.Hour)
 
 	// This should not panic even though the hook panics
 	// The cache should continue to function normally

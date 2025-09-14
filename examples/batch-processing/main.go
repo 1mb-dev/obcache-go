@@ -472,7 +472,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create processor: %v", err)
 	}
-	defer processor.Close()
+	defer func() {
+		if err := processor.Close(); err != nil {
+			log.Printf("Error closing processor: %v", err)
+		}
+	}()
 	
 	// Warm up cache
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

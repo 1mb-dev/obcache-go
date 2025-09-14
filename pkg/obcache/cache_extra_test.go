@@ -136,7 +136,7 @@ func TestCacheTTLMethod(t *testing.T) {
 	}
 
 	// Add an entry with default TTL via Put
-	cache.Put("default-ttl", "value-default-ttl")
+	_ = cache.Put("default-ttl", "value-default-ttl") // Test setup
 
 	value, found = cache.Get("default-ttl")
 	if !found {
@@ -171,7 +171,7 @@ func TestCacheClear(t *testing.T) {
 	}
 
 	// Clear all
-	cache.Clear()
+	_ = cache.Clear() // Test cleanup
 
 	if cache.Len() != 0 {
 		t.Fatalf("Expected 0 entries after Clear, got %d", cache.Len())
@@ -194,7 +194,7 @@ func TestCacheClose(t *testing.T) {
 	_ = cache.Set("key1", "value1", time.Hour)
 
 	// Close should not error
-	cache.Close()
+	_ = cache.Close() // Test cleanup
 
 	// After close, operations should still work but cleanup stops
 	_ = cache.Set("key2", "value2", time.Hour)
@@ -260,7 +260,7 @@ func TestCacheClearWithHooks(t *testing.T) {
 	_ = cache.Set("key2", "value2", time.Hour)
 
 	// Invalidate all should trigger hooks
-	cache.Clear()
+	_ = cache.Clear() // Test cleanup
 
 	// Should have called invalidate hook for each entry
 	if invalidateCount != 2 {

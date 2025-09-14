@@ -14,9 +14,9 @@ import (
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	
@@ -223,7 +223,7 @@ func (tc *TracedCache) WrapFunction(ctx context.Context, key string, ttl time.Du
 	// Execute function
 	span.SetAttributes(attribute.String("cache.source", "function"))
 	
-	funcCtx, funcSpan := tracer.Start(ctx, "wrapped_function")
+	_, funcSpan := tracer.Start(ctx, "wrapped_function")
 	start := time.Now()
 	
 	value, err := fn()
@@ -293,10 +293,10 @@ func initOpenTelemetry(ctx context.Context) (func(), error) {
 	}
 
 	// Set up trace provider
-	traceProvider := trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter),
-		trace.WithResource(res),
-		trace.WithSampler(trace.AlwaysSample()),
+	traceProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(traceExporter),
+		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 	)
 
 	// Set up metrics exporter (Prometheus)
@@ -306,9 +306,9 @@ func initOpenTelemetry(ctx context.Context) (func(), error) {
 	}
 
 	// Set up metric provider
-	metricProvider := metric.NewMeterProvider(
-		metric.WithResource(res),
-		metric.WithReader(metricExporter),
+	metricProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(res),
+		sdkmetric.WithReader(metricExporter),
 	)
 
 	// Set global providers
@@ -408,7 +408,7 @@ func main() {
 	fmt.Println("📦 Populating cache with initial data...")
 	
 	// Add some initial data with tracing
-	rootSpan := tracer.Start(ctx, "initial_data_load")
+	_, rootSpan := tracer.Start(ctx, "initial_data_load")
 	_ = cache.Set(ctx, "user:1", map[string]any{"name": "Alice", "role": "admin"}, time.Hour)
 	_ = cache.Set(ctx, "user:2", map[string]any{"name": "Bob", "role": "user"}, time.Hour)  
 	_ = cache.Set(ctx, "config:app", map[string]any{"version": "1.0.0", "debug": true}, 30*time.Minute)
@@ -424,7 +424,7 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	
 	http.HandleFunc("/cache/info", func(w http.ResponseWriter, r *http.Request) {
-		span := tracer.Start(r.Context(), "cache_info_handler")
+		_, span := tracer.Start(r.Context(), "cache_info_handler")
 		defer span.End()
 		
 		stats := cache.Stats()

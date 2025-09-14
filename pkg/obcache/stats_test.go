@@ -300,7 +300,7 @@ func TestStatsIntegrationWithCache(t *testing.T) {
 	}
 
 	// Delete
-	cache.Delete("key1")
+	_ = cache.Delete("key1")
 	stats = cache.Stats()
 	if stats.Invalidations() != 1 {
 		t.Fatalf("Expected 1 invalidation, got %d", stats.Invalidations())

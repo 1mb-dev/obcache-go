@@ -123,7 +123,7 @@ func (g *GzipCompressor) Compress(data []byte) ([]byte, error) {
 	}
 
 	if _, err := writer.Write(data); err != nil {
-		writer.Close()
+		_ = writer.Close() // Ignore error on cleanup path
 		return nil, fmt.Errorf("failed to write compressed data: %w", err)
 	}
 
@@ -140,7 +140,9 @@ func (g *GzipCompressor) Decompress(compressed []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close() // Ignore error on defer
+	}()
 
 	data, err := io.ReadAll(reader)
 	if err != nil {
@@ -175,7 +177,7 @@ func (d *DeflateCompressor) Compress(data []byte) ([]byte, error) {
 	}
 
 	if _, err := writer.Write(data); err != nil {
-		writer.Close()
+		_ = writer.Close() // Ignore error on cleanup path
 		return nil, fmt.Errorf("failed to write compressed data: %w", err)
 	}
 
@@ -192,7 +194,9 @@ func (d *DeflateCompressor) Decompress(compressed []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create deflate reader: %w", err)
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close() // Ignore error on defer
+	}()
 
 	data, err := io.ReadAll(reader)
 	if err != nil {

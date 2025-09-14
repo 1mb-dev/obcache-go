@@ -86,7 +86,7 @@ func TestWithHooks(t *testing.T) {
 func TestConfigBuilder(t *testing.T) {
 	// Test building config with multiple options
 	customKeyFunc := func(_ []any) string {
-		return "test-key"
+		return testKeyConst
 	}
 
 	hooks := &Hooks{
@@ -139,7 +139,7 @@ func TestNewCacheWithConfig(t *testing.T) {
 
 	// Fill the cache beyond the max entries to test eviction
 	for i := 0; i < 60; i++ { // More than the 50 limit
-		cache.Set(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i), time.Hour)
+		_ = cache.Set(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i), time.Hour) // Test setup
 	}
 
 	stats := cache.Stats()

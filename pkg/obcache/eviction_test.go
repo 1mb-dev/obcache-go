@@ -42,7 +42,7 @@ func TestEvictionStrategies(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create cache: %v", err)
 			}
-			defer cache.Close()
+			defer func() { _ = cache.Close() }()
 
 			testEvictionBehavior(t, cache, tc.evictionType)
 		})
@@ -160,7 +160,7 @@ func TestEvictionWithWrappedFunctions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	callCount := 0
 	expensiveFunc := func(x int) string {
@@ -232,7 +232,7 @@ func TestEvictionCallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	t.Logf("Cache created with eviction type: %v", config.EvictionType)
 
@@ -289,7 +289,7 @@ func TestEvictionStrategiesWithCleanup(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create cache: %v", err)
 			}
-			defer cache.Close()
+			defer func() { _ = cache.Close() }()
 
 			// Add entry with short TTL
 			err = cache.Set("shortlived", "value", 20*time.Millisecond)

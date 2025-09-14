@@ -19,7 +19,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Populate cache with some data
 	fmt.Println("Populating cache with test data...")

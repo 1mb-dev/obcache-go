@@ -418,7 +418,7 @@ func TestErrorCaching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	callCount := 0
 	testFunc := func(shouldError bool) (int, error) {
@@ -436,7 +436,7 @@ func TestErrorCaching(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create fresh cache: %v", err)
 		}
-		defer freshCache.Close()
+		defer func() { _ = freshCache.Close() }()
 
 		wrapped := Wrap(freshCache, testFunc) // Default: don't cache errors
 
@@ -490,7 +490,7 @@ func TestErrorCaching(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create fresh cache: %v", err)
 		}
-		defer freshCache.Close()
+		defer func() { _ = freshCache.Close() }()
 
 		wrapped := Wrap(freshCache, testFunc, WithErrorCaching())
 
@@ -527,7 +527,7 @@ func TestErrorCaching(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create fresh cache: %v", err)
 		}
-		defer freshCache.Close()
+		defer func() { _ = freshCache.Close() }()
 
 		wrapped := Wrap(freshCache, testFunc, WithErrorTTL(50*time.Millisecond))
 
@@ -569,7 +569,7 @@ func TestErrorCachingMultipleReturnValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	callCount := 0
 	testFunc := func(shouldError bool) (string, int, error) {

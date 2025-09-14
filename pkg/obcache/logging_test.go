@@ -416,6 +416,7 @@ func TestLoggingNilConfig(t *testing.T) {
 
 	if hooks == nil {
 		t.Error("Should return empty hooks, not nil")
+		return // Prevent nil dereference
 	}
 
 	// Should have no hooks

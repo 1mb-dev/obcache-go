@@ -10,6 +10,11 @@ import (
 	"github.com/vnykmshr/obcache-go/pkg/obcache"
 )
 
+// Context key type for type safety
+type contextKey string
+
+const requestIDKey contextKey = "requestID"
+
 // User represents a user from the database
 type User struct {
 	ID       int       `json:"id"`
@@ -78,8 +83,9 @@ func (s *UserService) GetUserWithContext(ctx context.Context, id int) (*User, er
 	s.mu.Unlock()
 
 	// Extract request metadata from context
-	requestID := "unknown"
-	if rid, ok := ctx.Value("requestID").(string); ok {
+	const unknownRequestID = "unknown"
+	requestID := unknownRequestID
+	if rid, ok := ctx.Value(requestIDKey).(string); ok {
 		requestID = rid
 	}
 
@@ -128,7 +134,7 @@ func main() {
 		OnHitCtx: []obcache.OnHitHookCtx{
 			func(ctx context.Context, key string, value any, args []any) {
 				requestID := "unknown"
-				if rid, ok := ctx.Value("requestID").(string); ok {
+				if rid, ok := ctx.Value(requestIDKey).(string); ok {
 					requestID = rid
 				}
 				fmt.Printf("🎯 Context-aware HIT: %s (request: %s, args: %v)\n", key, requestID, args)
@@ -137,7 +143,7 @@ func main() {
 		OnMissCtx: []obcache.OnMissHookCtx{
 			func(ctx context.Context, key string, args []any) {
 				requestID := "unknown"
-				if rid, ok := ctx.Value("requestID").(string); ok {
+				if rid, ok := ctx.Value(requestIDKey).(string); ok {
 					requestID = rid
 				}
 				fmt.Printf("🎯 Context-aware MISS: %s (request: %s, args: %v)\n", key, requestID, args)
@@ -187,8 +193,8 @@ func main() {
 	cachedGetUserWithContext := obcache.Wrap(cache, userService.GetUserWithContext)
 
 	// Create contexts with request metadata
-	ctx1 := context.WithValue(context.Background(), "requestID", "req-001")
-	ctx2 := context.WithValue(context.Background(), "requestID", "req-002")
+	ctx1 := context.WithValue(context.Background(), requestIDKey, "req-001")
+	ctx2 := context.WithValue(context.Background(), requestIDKey, "req-002")
 
 	// First call with context - cache miss
 	ctxUser1, err := cachedGetUserWithContext(ctx1, 10)

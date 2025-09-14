@@ -8,6 +8,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const testKeyConst = "test-key"
+
 func TestCacheWithRedisStore(t *testing.T) {
 	// Create a Redis client
 	client := redis.NewClient(&redis.Options{
@@ -36,10 +38,10 @@ func TestCacheWithRedisStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Redis cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Test basic operations
-	testKey := "test-key"
+	testKey := testKeyConst
 	testValue := "test-value"
 
 	// Test Set
@@ -124,7 +126,7 @@ func TestCacheWithRedisStoreAndHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Redis cache with hooks: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	testKey := "hooks-test"
 
@@ -135,14 +137,14 @@ func TestCacheWithRedisStoreAndHooks(t *testing.T) {
 	}
 
 	// Test hit hook
-	cache.Set(testKey, "value", time.Hour)
+	_ = cache.Set(testKey, "value", time.Hour) // Test setup
 	_, _ = cache.Get(testKey)
 	if !hitCalled {
 		t.Fatal("Expected hit hook to be called")
 	}
 
 	// Test invalidate hook
-	cache.Delete(testKey)
+	_ = cache.Delete(testKey) // Test operation
 	if !invalidateCalled {
 		t.Fatal("Expected invalidate hook to be called")
 	}
@@ -171,7 +173,7 @@ func TestWrappedFunctionWithRedisStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Redis cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	callCount := 0
 	// Note: Using float64 to avoid JSON serialization type conversion issues

@@ -100,7 +100,11 @@ func noCompressionExample() {
 	if err != nil {
 		log.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Store some large data
 	largeData := generateLargeJSON()
@@ -135,7 +139,11 @@ func gzipCompressionExample() {
 	if err != nil {
 		log.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Store some large data
 	largeData := generateLargeJSON()
@@ -195,7 +203,11 @@ func deflateCompressionExample() {
 	if err != nil {
 		log.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Test with very large repetitive data that should compress well
 	repeatedText := strings.Repeat("This is a test string that repeats many times to demonstrate compression efficiency. ", 1000)

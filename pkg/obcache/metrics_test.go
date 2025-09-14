@@ -176,7 +176,7 @@ func TestMetricsIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache with metrics: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Perform cache operations
 	_ = cache.Set("key1", "value1", time.Hour)
@@ -217,7 +217,7 @@ func TestMetricsPeriodicReporting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache with metrics: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Perform some operations
 	_ = cache.Set("key1", "value1", time.Hour)
@@ -264,7 +264,7 @@ func TestMetricsWithLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache with labeled metrics: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Perform operation
 	_ = cache.Set("key1", "value1", time.Hour)
@@ -292,7 +292,7 @@ func TestMetricsDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Perform operations
 	_ = cache.Set("key1", "value1", time.Hour)
@@ -318,7 +318,7 @@ func TestMetricsErrorHandling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Perform operations - should not panic even with export errors
 	_ = cache.Set("key1", "value1", time.Hour)
@@ -351,7 +351,7 @@ func TestMetricsCleanup(t *testing.T) {
 	}
 
 	// Close cache and verify metrics cleanup
-	cache.Close()
+	_ = cache.Close() // Test cleanup
 
 	if !mockExporter.IsClosed() {
 		t.Error("Expected metrics exporter to be closed")
@@ -432,7 +432,7 @@ func TestMultiExporter(t *testing.T) {
 	}
 
 	// Test close - only call once, not in defer and explicitly
-	cache.Close()
+	_ = cache.Close() // Test cleanup
 	if !mock1.IsClosed() || !mock2.IsClosed() {
 		t.Error("Expected both exporters to be closed")
 	}
@@ -482,7 +482,7 @@ func TestMetricsStatsInterface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() { _ = cache.Close() }()
 
 	// Perform operations to generate stats
 	_ = cache.Set("key1", "value1", time.Hour)
@@ -517,7 +517,7 @@ func BenchmarkMetricsOverhead(b *testing.B) {
 	// Benchmark without metrics
 	b.Run("NoMetrics", func(b *testing.B) {
 		cache, _ := New(NewDefaultConfig())
-		defer cache.Close()
+		defer func() { _ = cache.Close() }()
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -537,7 +537,7 @@ func BenchmarkMetricsOverhead(b *testing.B) {
 			Labels:    make(metrics.Labels),
 		})
 		cache, _ := New(config)
-		defer cache.Close()
+		defer func() { _ = cache.Close() }()
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -556,7 +556,7 @@ func BenchmarkMetricsOverhead(b *testing.B) {
 			Labels:    make(metrics.Labels),
 		})
 		cache, _ := New(config)
-		defer cache.Close()
+		defer func() { _ = cache.Close() }()
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

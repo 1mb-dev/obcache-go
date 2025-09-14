@@ -455,7 +455,11 @@ func (s *APIServer) healthCheck(c echo.Context) error {
 }
 
 func (s *APIServer) Start(address string) error {
-	defer s.cacheManager.Close()
+	defer func() {
+		if err := s.cacheManager.Close(); err != nil {
+			log.Printf("Error closing cache manager: %v", err)
+		}
+	}()
 	return s.echo.Start(address)
 }
 

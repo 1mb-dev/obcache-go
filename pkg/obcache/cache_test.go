@@ -68,7 +68,7 @@ func TestCacheDelete(t *testing.T) {
 
 	const testKey = "test-key"
 	key := testKey
-	cache.Set(key, "value", time.Hour)
+	_ = cache.Set(key, "value", time.Hour) // Test setup
 
 	// Verify it exists
 	_, found := cache.Get(key)
@@ -159,7 +159,7 @@ func TestCacheTTL(t *testing.T) {
 	key := testKey
 	shortTTL := 10 * time.Millisecond
 
-	cache.Set(key, "value", shortTTL)
+	_ = cache.Set(key, "value", shortTTL) // Test setup
 
 	// Should exist immediately
 	_, found := cache.Get(key)
@@ -233,7 +233,7 @@ func TestCacheConcurrency(t *testing.T) {
 			for j := 0; j < numOperations; j++ {
 				key := fmt.Sprintf("key-%d-%d", id, j)
 				value := fmt.Sprintf("value-%d-%d", id, j)
-				cache.Set(key, value, time.Hour)
+				_ = cache.Set(key, value, time.Hour) // Test setup
 			}
 		}(i)
 	}
@@ -271,7 +271,7 @@ func TestCacheReset(t *testing.T) {
 	_ = cache.Set("key2", "value2", time.Hour)
 	cache.Get("key1")
 	cache.Get("nonexistent")
-	cache.Delete("key2")
+	_ = cache.Delete("key2") // Test operation
 
 	stats := cache.Stats()
 	if stats.Total() == 0 {

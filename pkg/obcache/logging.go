@@ -420,12 +420,12 @@ func ExampleBasicLogging() {
 
 	// These operations will now be logged
 	if err := cache.Set("user:123", "John Doe", time.Hour); err != nil {
-		// Handle error appropriately in real usage
+		log.Printf("Error setting cache: %v", err)
 	}
 	_, _ = cache.Get("user:123") // Will log cache hit
 	_, _ = cache.Get("user:999") // Will log cache miss
 	if err := cache.Delete("user:123"); err != nil {
-		// Handle error appropriately in real usage
+		log.Printf("Error deleting from cache: %v", err)
 	} // Will log deletion
 }
 
@@ -449,7 +449,7 @@ func ExampleAdvancedLogging() {
 
 	// Operations will be logged with service context
 	if err := cache.Set("config:feature_flags", map[string]bool{"new_ui": true}, time.Hour); err != nil {
-		// Handle error appropriately in real usage
+		log.Printf("Error setting feature flags: %v", err)
 	}
 	_, _ = cache.Get("config:feature_flags")
 }

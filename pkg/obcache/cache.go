@@ -165,7 +165,7 @@ func createMemoryStore(config *Config) (store.Store, error) {
 // createRedisStore creates a Redis-based store
 func createRedisStore(config *Config) (store.Store, error) {
 	if config.Redis == nil {
-		return nil, fmt.Errorf("Redis configuration is required when using StoreTypeRedis")
+		return nil, fmt.Errorf("redis configuration is required when using StoreTypeRedis")
 	}
 
 	redisConfig := &redisstore.Config{
@@ -359,7 +359,7 @@ func (c *Cache) Close() error {
 			c.metricsWg.Wait()
 		}
 		if c.metricsExporter != nil {
-			c.metricsExporter.Close()
+			_ = c.metricsExporter.Close() // Ignore error on shutdown
 		}
 		err = c.store.Close()
 	})

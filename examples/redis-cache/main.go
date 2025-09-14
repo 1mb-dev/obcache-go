@@ -63,7 +63,11 @@ func basicRedisExample() {
 		fmt.Println("⚠️  Make sure Redis is running on localhost:6379")
 		return
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Store a user in cache
 	user := &User{ID: 1, Name: "Alice", Email: "alice@example.com"}
@@ -100,7 +104,11 @@ func functionWrappingExample() {
 		fmt.Println("⚠️  Make sure Redis is running on localhost:6379")
 		return
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Wrap the expensive function with caching
 	cachedGetUser := obcache.Wrap(cache, getUserFromDatabase,
@@ -165,7 +173,11 @@ func distributedCachingExample() {
 		log.Printf("Failed to create distributed cache: %v", err)
 		return
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Simulate distributed caching scenario
 	fmt.Println("🌐 Simulating distributed caching...")

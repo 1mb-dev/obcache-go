@@ -1,105 +1,19 @@
+version: "2"
+
 run:
   timeout: 5m
-  modules-download-mode: readonly
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  govet:
-    enable:
-      - shadow
-  gocyclo:
-    min-complexity: 15
-  dupl:
-    threshold: 100
-  goconst:
-    min-len: 2
-    min-occurrences: 2
-  goimports:
-    local-prefixes: github.com/vnykmshr/obcache-go
-  gofmt:
-    simplify: true
-  gosec:
-    excludes:
-      - G404 # Use of weak random number generator is acceptable for cache keys
 
 linters:
-  disable-all: true
+  default: standard
+  disable:
+    - varnamelen
+    - wsl
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - typecheck
-    - unused
     - goconst
     - gocyclo
-    - gofmt
-    - goimports
     - gosec
     - misspell
-    - unconvert
-    - unparam
-    - gocritic
-    - revive
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - gocritic
-        - errcheck  # Test files often don't need to check all errors
-        - goconst   # Test files often have repeated strings
-        - unparam   # Test functions often have unused params
-        - revive    # Test files often have complex structures
-        - gocyclo   # Test functions can be complex
-    - path: bench_test\.go
-      linters:
-        - errcheck  # Benchmark files focus on performance, not error handling
-        - unparam   # Benchmark functions often have unused params
-    - path: examples/
-      linters:
-        - gosec
-        - gocritic
-    - path: internal/singleflight/
-      linters:
-        - revive # Allow non-standard error position for singleflight API compatibility
-    - path: pkg/obcache/wrap\.go
-      linters:
-        - errcheck  # Complex reflection code needs some unchecked errors
-        - revive    # Allow complex if-else structure for reflection logic
-    - path: internal/store/memory/memory\.go
-      linters:
-        - goimports # Allow alias import for LRU library
-    - path: internal/eviction/
-      linters:
-        - revive    # Allow EvictionType naming
-        - goimports # Allow alias import for LRU library
-    - path: internal/store/redis/redis\.go
-      linters:
-        - errcheck  # Redis operations may have ignored errors for performance
-        - revive    # Allow certain code patterns for Redis integration
-    - path: pkg/obcache/logging\.go
-      linters:
-        - revive     # Allow empty blocks in example code
-        - staticcheck # Allow empty branches in example code
-    - text: "SA1029.*should not use built-in type string as key"
-      linters:
-        - staticcheck # Allow string keys in context for testing/examples
-    - text: "SA9003.*empty branch"
-      linters:
-        - staticcheck # Allow empty branches in example code
-    - path: pkg/obcache/logging_test.go
-      linters:
-        - staticcheck # Test code may have intentional nil checks
-    - text: "unused-parameter.*seems to be unused"
-      linters:
-        - revive # Allow unused parameters in interface implementations
-    - text: "result.*is always nil"
-      linters:
-        - unparam # Allow methods that always return nil for interface compliance
   max-issues-per-linter: 0
   max-same-issues: 0

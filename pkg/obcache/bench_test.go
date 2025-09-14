@@ -283,7 +283,7 @@ func BenchmarkConcurrentCacheGet(b *testing.B) {
 
 	// Pre-populate cache
 	for i := 0; i < 1000; i++ {
-		cache.Set(fmt.Sprintf("key-%d", i), i, time.Hour)
+		_ = cache.Set(fmt.Sprintf("key-%d", i), i, time.Hour) // Benchmark setup
 	}
 
 	b.ResetTimer()
@@ -654,7 +654,9 @@ func BenchmarkHookConditionEvaluation(b *testing.B) {
 	contextCondition := ContextValueCondition("env", "prod")
 	andCondition := AndCondition(prefixCondition, contextCondition)
 
-	ctx := context.WithValue(context.Background(), "env", "prod")
+	type contextKey string
+	const envKey contextKey = "env"
+	ctx := context.WithValue(context.Background(), envKey, "prod")
 
 	b.ResetTimer()
 	b.ReportAllocs()

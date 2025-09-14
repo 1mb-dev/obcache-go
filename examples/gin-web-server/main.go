@@ -265,7 +265,11 @@ func (s *WebServer) healthCheck(c *gin.Context) {
 }
 
 func (s *WebServer) Run(addr string) error {
-	defer s.userService.Close()
+	defer func() {
+		if err := s.userService.Close(); err != nil {
+			log.Printf("Error closing user service: %v", err)
+		}
+	}()
 	return s.router.Run(addr)
 }
 

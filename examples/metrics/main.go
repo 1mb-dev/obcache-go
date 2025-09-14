@@ -95,7 +95,11 @@ func prometheusExample() {
 	if err != nil {
 		log.Fatalf("Failed to create cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Wrap function with caching
 	cachedFetchUser := obcache.Wrap(cache, fetchUserData)
@@ -126,7 +130,12 @@ func prometheusExample() {
 	go func() {
 		http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 		fmt.Println("📊 Prometheus metrics server started on :8080/metrics")
-		if err := http.ListenAndServe(":8080", nil); err != nil {
+		server := &http.Server{
+			Addr:         ":8080",
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		if err := server.ListenAndServe(); err != nil {
 			log.Printf("Prometheus server error: %v", err)
 		}
 	}()
@@ -173,18 +182,24 @@ func opentelemetryExample() {
 	if err != nil {
 		log.Fatalf("Failed to create cache with OTel metrics: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	// Simulate cache operations
 	fmt.Println("📊 Generating cache activity for OpenTelemetry metrics...")
 
 	// Set some values
 	for i := 1; i <= 5; i++ {
-		cache.Set(fmt.Sprintf("product:%d", i), map[string]any{
+		if err := cache.Set(fmt.Sprintf("product:%d", i), map[string]any{
 			"id":    i,
 			"name":  fmt.Sprintf("Product %d", i),
 			"price": float64(i) * 10.99,
-		}, time.Hour)
+		}, time.Hour); err != nil {
+			log.Printf("Error setting cache: %v", err)
+		}
 	}
 
 	// Get some values (mix of hits and misses)
@@ -247,7 +262,11 @@ func multiExporterExample() {
 	if err != nil {
 		log.Fatalf("Failed to create multi-metrics cache: %v", err)
 	}
-	defer cache.Close()
+	defer func() {
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
+	}()
 
 	fmt.Println("📊 Generating activity for multiple exporters...")
 
@@ -258,7 +277,9 @@ func multiExporterExample() {
 
 		// Set every 4th item
 		if i%4 == 0 {
-			cache.Set(key, value, 30*time.Second)
+			if err := cache.Set(key, value, 30*time.Second); err != nil {
+				log.Printf("Error setting cache: %v", err)
+			}
 		}
 
 		// Try to get every item

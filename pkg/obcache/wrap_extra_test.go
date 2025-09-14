@@ -10,10 +10,11 @@ func TestWrapFunc0WithError(t *testing.T) {
 		t.Fatalf("Failed to create cache: %v", err)
 	}
 
+	const expectedResult = "result"
 	callCount := 0
 	fn := func() (string, error) {
 		callCount++
-		return "result", nil
+		return expectedResult, nil
 	}
 
 	wrappedFn := WrapFunc0WithError(cache, fn)

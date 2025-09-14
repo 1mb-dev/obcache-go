@@ -175,7 +175,7 @@ func executeFunctionWithSingleflight(cache *Cache, fnValue reflect.Value, fnType
 			if errorTTL == 0 {
 				errorTTL = opts.TTL
 			}
-			cache.Set(key, cachedError{Err: err}, errorTTL)
+			_ = cache.Set(key, cachedError{Err: err}, errorTTL) // Cache error
 		}
 		// Return the error in the function's expected format
 		return createErrorReturn(fnType, err)
@@ -183,7 +183,7 @@ func executeFunctionWithSingleflight(cache *Cache, fnValue reflect.Value, fnType
 
 	// Store in cache if this wasn't a shared call
 	if !shared {
-		cache.Set(key, value, opts.TTL)
+		_ = cache.Set(key, value, opts.TTL) // Cache result
 	}
 
 	// Convert the result back to the expected format

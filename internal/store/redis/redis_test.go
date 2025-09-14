@@ -35,11 +35,13 @@ func TestRedisStoreBasicOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Redis store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close() // Test cleanup - ignore error
+	}()
 
 	// Clean up any existing test data
 	testKey := "test-key"
-	store.Delete(testKey)
+	_ = store.Delete(testKey) // Test cleanup - ignore error
 
 	// Test Set and Get
 	testEntry := entry.New("test-value", time.Hour)
@@ -105,11 +107,13 @@ func TestRedisStoreWithTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Redis store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close() // Test cleanup - ignore error
+	}()
 
 	// Test with short TTL
 	testKey := "ttl-key"
-	store.Delete(testKey) // Clean up
+	_ = store.Delete(testKey) // Test cleanup - ignore error
 
 	shortTTLEntry := entry.New("ttl-value", 100*time.Millisecond)
 	err = store.Set(testKey, shortTTLEntry)
@@ -153,13 +157,15 @@ func TestRedisStoreClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Redis store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close() // Test cleanup - ignore error
+	}()
 
 	// Add some entries
 	for i := 0; i < 5; i++ {
 		key := fmt.Sprintf("key-%d", i)
 		entry := entry.New(fmt.Sprintf("value-%d", i), time.Hour)
-		store.Set(key, entry)
+		_ = store.Set(key, entry) // Test setup - ignore error
 	}
 
 	// Verify entries exist
