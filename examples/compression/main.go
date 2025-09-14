@@ -107,7 +107,10 @@ func noCompressionExample() {
 	fmt.Printf("📊 Original data size: %d bytes\n", len(largeData))
 
 	// Store and retrieve
-	cache.Set("large_data", largeData, 5*time.Minute)
+	if err := cache.Set("large_data", largeData, 5*time.Minute); err != nil {
+		log.Printf("Error setting cache: %v", err)
+		return
+	}
 
 	retrieved, found := cache.Get("large_data")
 	if !found {
@@ -141,8 +144,14 @@ func gzipCompressionExample() {
 	fmt.Printf("📊 JSON data size: %d bytes\n", len(largeData))
 
 	// Store and retrieve large JSON
-	cache.Set("large_json", largeData, 5*time.Minute)
-	cache.Set("large_user", user, 5*time.Minute)
+	if err := cache.Set("large_json", largeData, 5*time.Minute); err != nil {
+		log.Printf("Error setting JSON cache: %v", err)
+		return
+	}
+	if err := cache.Set("large_user", user, 5*time.Minute); err != nil {
+		log.Printf("Error setting user cache: %v", err)
+		return
+	}
 
 	// Retrieve and verify
 	retrievedJSON, found := cache.Get("large_json")
@@ -192,7 +201,10 @@ func deflateCompressionExample() {
 	repeatedText := strings.Repeat("This is a test string that repeats many times to demonstrate compression efficiency. ", 1000)
 	fmt.Printf("📊 Repetitive text size: %d bytes\n", len(repeatedText))
 
-	cache.Set("repetitive_text", repeatedText, 5*time.Minute)
+	if err := cache.Set("repetitive_text", repeatedText, 5*time.Minute); err != nil {
+		log.Printf("Error setting repetitive text cache: %v", err)
+		return
+	}
 
 	retrieved, found := cache.Get("repetitive_text")
 	if !found {
@@ -233,11 +245,17 @@ func compressionThresholdExample() {
 
 		// Test with small data (should not be compressed)
 		smallData := strings.Repeat("small", 50) // ~250 bytes
-		cache.Set("small_data", smallData, time.Minute)
+		if err := cache.Set("small_data", smallData, time.Minute); err != nil {
+			log.Printf("Error setting small data cache: %v", err)
+			continue
+		}
 
 		// Test with large data (should be compressed if above threshold)
 		largeData := strings.Repeat("large data for compression testing ", 100) // ~3400 bytes
-		cache.Set("large_data", largeData, time.Minute)
+		if err := cache.Set("large_data", largeData, time.Minute); err != nil {
+			log.Printf("Error setting large data cache: %v", err)
+			continue
+		}
 
 		// Retrieve both
 		smallRetrieved, _ := cache.Get("small_data")
@@ -255,7 +273,9 @@ func compressionThresholdExample() {
 			fmt.Printf("    ❌ Data integrity failed\n")
 		}
 
-		cache.Close()
+		if err := cache.Close(); err != nil {
+			log.Printf("Error closing cache: %v", err)
+		}
 	}
 }
 
@@ -270,14 +290,23 @@ func performanceComparisonExample() {
 	fmt.Printf("  Testing %d operations without compression...\n", iterations)
 	start := time.Now()
 
-	uncompressedCache, _ := obcache.New(obcache.NewDefaultConfig().WithMaxEntries(200))
+	uncompressedCache, err := obcache.New(obcache.NewDefaultConfig().WithMaxEntries(200))
+	if err != nil {
+		log.Printf("Error creating uncompressed cache: %v", err)
+		return
+	}
 	for i := 0; i < iterations; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		uncompressedCache.Set(key, testData, time.Hour)
+		if err := uncompressedCache.Set(key, testData, time.Hour); err != nil {
+			log.Printf("Error setting uncompressed cache key %s: %v", key, err)
+			continue
+		}
 		_, _ = uncompressedCache.Get(key)
 	}
 	uncompressedTime := time.Since(start)
-	uncompressedCache.Close()
+	if err := uncompressedCache.Close(); err != nil {
+		log.Printf("Error closing uncompressed cache: %v", err)
+	}
 
 	// Test with compression
 	fmt.Printf("  Testing %d operations with gzip compression...\n", iterations)
@@ -290,15 +319,24 @@ func performanceComparisonExample() {
 			Algorithm: compression.CompressorGzip,
 			MinSize:   1000,
 		})
-	compressedCache, _ := obcache.New(config)
+	compressedCache, err := obcache.New(config)
+	if err != nil {
+		log.Printf("Error creating compressed cache: %v", err)
+		return
+	}
 
 	for i := 0; i < iterations; i++ {
 		key := fmt.Sprintf("test_%d", i)
-		compressedCache.Set(key, testData, time.Hour)
+		if err := compressedCache.Set(key, testData, time.Hour); err != nil {
+			log.Printf("Error setting compressed cache key %s: %v", key, err)
+			continue
+		}
 		_, _ = compressedCache.Get(key)
 	}
 	compressedTime := time.Since(start)
-	compressedCache.Close()
+	if err := compressedCache.Close(); err != nil {
+		log.Printf("Error closing compressed cache: %v", err)
+	}
 
 	// Results
 	fmt.Printf("\n📊 Performance Results:\n")

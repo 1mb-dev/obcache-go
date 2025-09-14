@@ -430,10 +430,16 @@ func (s *APIServer) invalidateProductCache(c echo.Context) error {
 	// Invalidate from all relevant caches
 	productKey := fmt.Sprintf("product:%d", id)
 	analyticsKey := fmt.Sprintf("analytics:%d", id)
-	
-	s.cacheManager.l1Cache.Delete(productKey)
-	s.cacheManager.l2Cache.Delete(productKey)
-	s.cacheManager.analyticsCache.Delete(analyticsKey)
+
+	if err := s.cacheManager.l1Cache.Delete(productKey); err != nil {
+		log.Printf("Error deleting from L1 cache: %v", err)
+	}
+	if err := s.cacheManager.l2Cache.Delete(productKey); err != nil {
+		log.Printf("Error deleting from L2 cache: %v", err)
+	}
+	if err := s.cacheManager.analyticsCache.Delete(analyticsKey); err != nil {
+		log.Printf("Error deleting from analytics cache: %v", err)
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{
 		"message": fmt.Sprintf("Cache invalidated for product %d", id),

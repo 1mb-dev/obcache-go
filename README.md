@@ -4,6 +4,12 @@ High-performance, thread-safe caching library for Go with automatic function wra
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/vnykmshr/obcache-go.svg)](https://pkg.go.dev/github.com/vnykmshr/obcache-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/vnykmshr/obcache-go)](https://goreportcard.com/report/github.com/vnykmshr/obcache-go)
+[![CI](https://github.com/vnykmshr/obcache-go/workflows/CI/badge.svg)](https://github.com/vnykmshr/obcache-go/actions/workflows/ci.yml)
+[![Security](https://github.com/vnykmshr/obcache-go/workflows/Security/badge.svg)](https://github.com/vnykmshr/obcache-go/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/vnykmshr/obcache-go/branch/main/graph/badge.svg)](https://codecov.io/gh/vnykmshr/obcache-go)
+[![License](https://img.shields.io/github/license/vnykmshr/obcache-go.svg)](https://github.com/vnykmshr/obcache-go/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/release/vnykmshr/obcache-go.svg)](https://github.com/vnykmshr/obcache-go/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/vnykmshr/obcache-go)](https://github.com/vnykmshr/obcache-go/blob/main/go.mod)
 
 ## Installation
 

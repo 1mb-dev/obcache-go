@@ -16,7 +16,10 @@ func main() {
 
 	// Example 1: Basic cache usage
 	fmt.Println("=== Basic Cache Usage ===")
-	cache.Set("key1", "value1", 5*time.Minute)
+	if err := cache.Set("key1", "value1", 5*time.Minute); err != nil {
+		fmt.Printf("Error setting cache: %v\n", err)
+		return
+	}
 
 	if value, found := cache.Get("key1"); found {
 		fmt.Printf("Found: %v\n", value)
