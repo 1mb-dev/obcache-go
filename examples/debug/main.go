@@ -33,7 +33,7 @@ func main() {
 	}, time.Hour)
 
 	_ = cache.Set("user:2", map[string]any{
-		"name":  "Bob", 
+		"name":  "Bob",
 		"email": "bob@example.com",
 	}, 30*time.Minute)
 
@@ -48,7 +48,7 @@ func main() {
 
 	// Generate some cache activity for statistics
 	_, _ = cache.Get("user:1")       // hit
-	_, _ = cache.Get("user:2")       // hit  
+	_, _ = cache.Get("user:2")       // hit
 	_, _ = cache.Get("missing")      // miss
 	_, _ = cache.Get("also-missing") // miss
 
@@ -58,9 +58,9 @@ func main() {
 	fmt.Println("\n🚀 Cache debug server started on http://localhost:8080")
 	fmt.Println("\nAvailable endpoints:")
 	fmt.Println("  GET http://localhost:8080/stats - Cache statistics only")
-	fmt.Println("  GET http://localhost:8080/keys  - Statistics + all keys with metadata") 
+	fmt.Println("  GET http://localhost:8080/keys  - Statistics + all keys with metadata")
 	fmt.Println("  GET http://localhost:8080/      - Same as /keys (default)")
-	
+
 	fmt.Println("\nExample responses:")
 	fmt.Println("📊 Stats endpoint will show:")
 	fmt.Println(`  {

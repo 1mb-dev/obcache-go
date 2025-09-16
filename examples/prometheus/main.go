@@ -152,7 +152,7 @@ func (pc *PrometheusCache) updateMetrics() {
 // Simulate application workload
 func simulateWorkload(cache *PrometheusCache) {
 	keys := []string{"user:1", "user:2", "user:3", "product:100", "product:200", "config:app"}
-	
+
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
@@ -207,7 +207,7 @@ func main() {
 
 	// Start metrics server
 	http.Handle("/metrics", promhttp.Handler())
-	
+
 	// Add custom cache info endpoint
 	http.HandleFunc("/cache/info", func(w http.ResponseWriter, r *http.Request) {
 		stats := cache.Stats()
@@ -229,7 +229,7 @@ func main() {
 
 	fmt.Println("\n📈 Example Prometheus queries:")
 	fmt.Println("  # Hit rate: obcache_hit_rate_percent")
-	fmt.Println("  # Request rate: rate(obcache_hits_total[1m]) + rate(obcache_misses_total[1m])")  
+	fmt.Println("  # Request rate: rate(obcache_hits_total[1m]) + rate(obcache_misses_total[1m])")
 	fmt.Println("  # Eviction rate: rate(obcache_evictions_total[1m])")
 	fmt.Println("  # Operation latency: obcache_operation_duration_seconds")
 

@@ -23,7 +23,7 @@ func expensiveComputation(n int) int {
 // expensiveIOOperation simulates an I/O bound operation
 func expensiveIOOperation(n int) int {
 	// Simulate I/O delay (database, API call, etc.)
-	time.Sleep(time.Millisecond)
+	time.Sleep(TestSlowOperation)
 	return n * 2
 }
 
@@ -64,7 +64,7 @@ func BenchmarkCacheSet(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key-%d", i)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 	}
 }
 
@@ -77,7 +77,7 @@ func BenchmarkCacheGet(b *testing.B) {
 	// Pre-populate cache
 	for i := 0; i < 1000; i++ {
 		key := fmt.Sprintf("key-%d", i)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 	}
 
 	b.ResetTimer()
@@ -312,7 +312,7 @@ func BenchmarkConcurrentCacheSet(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			key := fmt.Sprintf("key-%d", i)
-			_ = cache.Set(key, i, time.Hour)
+			_ = cache.Set(key, i, TestTTL)
 			i++
 		}
 	})
@@ -384,7 +384,7 @@ func BenchmarkShortTTL(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	wrappedFunc := Wrap(cache, expensiveComputation, WithTTL(time.Millisecond))
+	wrappedFunc := Wrap(cache, expensiveComputation, WithTTL(TestShortTTL))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -400,7 +400,7 @@ func BenchmarkLongTTL(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	wrappedFunc := Wrap(cache, expensiveComputation, WithTTL(time.Hour))
+	wrappedFunc := Wrap(cache, expensiveComputation, WithTTL(TestTTL))
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -496,7 +496,7 @@ func BenchmarkCacheMemoryUsage(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Set and get operations
 		key := fmt.Sprintf("key-%d", i%1000)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 		_, _ = cache.Get(key)
 	}
 }
@@ -553,7 +553,7 @@ func BenchmarkHooksNoHooks(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key-%d", i%100)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 		_, _ = cache.Get(key)
 	}
 }
@@ -573,7 +573,7 @@ func BenchmarkHooksWithLegacyHooks(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key-%d", i%100)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 		_, _ = cache.Get(key)
 	}
 }
@@ -595,7 +595,7 @@ func BenchmarkHooksWithPriorityHooks(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key-%d", i%100)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 		_, _ = cache.Get(key)
 	}
 }
@@ -617,7 +617,7 @@ func BenchmarkHooksWithConditionalHooks(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key-%d", i%100)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 		_, _ = cache.Get(key)
 	}
 }
@@ -644,7 +644,7 @@ func BenchmarkHooksComprehensive(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key-%d", i%100)
-		_ = cache.Set(key, i, time.Hour)
+		_ = cache.Set(key, i, TestTTL)
 		_, _ = cache.Get(key)
 	}
 }

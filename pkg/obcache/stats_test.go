@@ -3,7 +3,6 @@ package obcache
 import (
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestStatsInitialState(t *testing.T) {
@@ -286,7 +285,7 @@ func TestStatsIntegrationWithCache(t *testing.T) {
 	}
 
 	// Set and Hit
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", "value1", TestTTL)
 	_, found = cache.Get("key1")
 	if !found {
 		t.Fatal("Expected hit")
@@ -307,9 +306,9 @@ func TestStatsIntegrationWithCache(t *testing.T) {
 	}
 
 	// Test eviction by filling cache
-	_ = cache.Set("key1", "value1", time.Hour)
-	_ = cache.Set("key2", "value2", time.Hour)
-	_ = cache.Set("key3", "value3", time.Hour) // Should evict key1
+	_ = cache.Set("key1", "value1", TestTTL)
+	_ = cache.Set("key2", "value2", TestTTL)
+	_ = cache.Set("key3", "value3", TestTTL) // Should evict key1
 
 	stats = cache.Stats()
 	if stats.Evictions() == 0 {

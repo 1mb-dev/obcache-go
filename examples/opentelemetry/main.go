@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/prometheus"
@@ -18,8 +19,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	
+
 	"github.com/vnykmshr/obcache-go/pkg/obcache"
 )
 
@@ -31,7 +31,7 @@ var (
 // TracedCache wraps obcache with OpenTelemetry observability
 type TracedCache struct {
 	cache *obcache.Cache
-	
+
 	// Metrics
 	hitCounter     metric.Int64Counter
 	missCounter    metric.Int64Counter
@@ -222,18 +222,18 @@ func (tc *TracedCache) WrapFunction(ctx context.Context, key string, ttl time.Du
 
 	// Execute function
 	span.SetAttributes(attribute.String("cache.source", "function"))
-	
+
 	_, funcSpan := tracer.Start(ctx, "wrapped_function")
 	start := time.Now()
-	
+
 	value, err := fn()
 	duration := time.Since(start)
-	
+
 	funcSpan.SetAttributes(
 		attribute.Float64("function.duration_seconds", duration.Seconds()),
 		attribute.Bool("function.error", err != nil),
 	)
-	
+
 	if err != nil {
 		funcSpan.RecordError(err)
 	}
@@ -319,11 +319,11 @@ func initOpenTelemetry(ctx context.Context) (func(), error) {
 	cleanup := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		if err := traceProvider.Shutdown(ctx); err != nil {
 			log.Printf("Error shutting down trace provider: %v", err)
 		}
-		
+
 		if err := metricProvider.Shutdown(ctx); err != nil {
 			log.Printf("Error shutting down metric provider: %v", err)
 		}
@@ -334,7 +334,7 @@ func initOpenTelemetry(ctx context.Context) (func(), error) {
 
 func simulateWorkload(ctx context.Context, cache *TracedCache) {
 	keys := []string{"user:1", "user:2", "user:3", "product:100", "product:200", "config:app"}
-	
+
 	go func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
@@ -346,12 +346,12 @@ func simulateWorkload(ctx context.Context, cache *TracedCache) {
 			case <-ticker.C:
 				// Create a span for the operation
 				opCtx, span := tracer.Start(ctx, "simulate_operation")
-				
+
 				switch rand.Intn(10) {
 				case 0, 1, 2, 3, 4: // 50% get operations
 					key := keys[rand.Intn(len(keys))]
 					_, _ = cache.Get(opCtx, key)
-					
+
 				case 5, 6: // 20% set operations
 					key := keys[rand.Intn(len(keys))]
 					value := map[string]any{
@@ -359,23 +359,23 @@ func simulateWorkload(ctx context.Context, cache *TracedCache) {
 						"timestamp": time.Now().Unix(),
 					}
 					_ = cache.Set(opCtx, key, value, time.Duration(rand.Intn(300))*time.Second)
-					
+
 				case 7: // 10% wrap operations
 					key := keys[rand.Intn(len(keys))]
 					_, _ = cache.WrapFunction(opCtx, key, time.Minute, func() (any, error) {
 						// Simulate expensive operation
 						time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 						return map[string]any{
-							"computed": rand.Intn(1000),
+							"computed":  rand.Intn(1000),
 							"timestamp": time.Now().Unix(),
 						}, nil
 					})
-					
+
 				case 8, 9: // 20% miss operations
 					key := fmt.Sprintf("missing:%d", rand.Intn(100))
 					_, _ = cache.Get(opCtx, key)
 				}
-				
+
 				span.End()
 			}
 		}
@@ -406,11 +406,11 @@ func main() {
 	}
 
 	fmt.Println("📦 Populating cache with initial data...")
-	
+
 	// Add some initial data with tracing
 	_, rootSpan := tracer.Start(ctx, "initial_data_load")
 	_ = cache.Set(ctx, "user:1", map[string]any{"name": "Alice", "role": "admin"}, time.Hour)
-	_ = cache.Set(ctx, "user:2", map[string]any{"name": "Bob", "role": "user"}, time.Hour)  
+	_ = cache.Set(ctx, "user:2", map[string]any{"name": "Bob", "role": "user"}, time.Hour)
 	_ = cache.Set(ctx, "config:app", map[string]any{"version": "1.0.0", "debug": true}, 30*time.Minute)
 	rootSpan.End()
 
@@ -422,11 +422,11 @@ func main() {
 
 	// Set up HTTP endpoints
 	http.Handle("/metrics", promhttp.Handler())
-	
+
 	http.HandleFunc("/cache/info", func(w http.ResponseWriter, r *http.Request) {
 		_, span := tracer.Start(r.Context(), "cache_info_handler")
 		defer span.End()
-		
+
 		stats := cache.Stats()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{
@@ -437,7 +437,7 @@ func main() {
   "evictions": %d,
   "invalidations": %d
 }`, stats.Hits(), stats.Misses(), stats.HitRate(), stats.KeyCount(), stats.Evictions(), stats.Invalidations())
-		
+
 		span.SetAttributes(
 			attribute.Int64("cache.hits", stats.Hits()),
 			attribute.Int64("cache.misses", stats.Misses()),
@@ -451,9 +451,9 @@ func main() {
 		if key == "" {
 			key = "demo:test"
 		}
-		
+
 		value, found := cache.Get(r.Context(), key)
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		if found {
 			fmt.Fprintf(w, `{"found": true, "value": %v}`, value)

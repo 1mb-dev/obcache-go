@@ -51,16 +51,16 @@ func NewUserService() *UserService {
 func (s *UserService) GetUserByID(userID int) (*User, error) {
 	// Simulate database latency
 	time.Sleep(100 * time.Millisecond)
-	
+
 	user, exists := s.simulatedDB[userID]
 	if !exists {
 		return nil, fmt.Errorf("user not found: %d", userID)
 	}
-	
+
 	// Simulate updating last seen (in real app, this might be a separate call)
 	userCopy := *user
 	userCopy.LastSeen = time.Now().Format("2006-01-02 15:04:05")
-	
+
 	log.Printf("Database query executed for user ID: %d", userID)
 	return &userCopy, nil
 }
@@ -74,11 +74,11 @@ type CachedUserService struct {
 
 func NewCachedUserService() (*CachedUserService, error) {
 	userService := NewUserService()
-	
+
 	// Configure cache based on environment
 	var cache *obcache.Cache
 	var err error
-	
+
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		// Production: Use Redis backend
 		config := obcache.NewRedisConfig(redisURL).
@@ -93,7 +93,7 @@ func NewCachedUserService() (*CachedUserService, error) {
 			WithCleanupInterval(time.Minute)
 		cache, err = obcache.New(config)
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cache: %w", err)
 	}
@@ -109,7 +109,7 @@ func NewCachedUserService() (*CachedUserService, error) {
 	hooks.AddOnEvict(func(key string, value any, reason obcache.EvictReason) {
 		log.Printf("Cache EVICT: key=%s, reason=%s", key, reason)
 	})
-	
+
 	// Create cached function with error caching disabled for user queries
 	// (we don't want to cache "user not found" errors for too long)
 	cachedGetUser := obcache.Wrap(cache, userService.GetUserByID,
@@ -150,12 +150,12 @@ func NewWebServer() (*WebServer, error) {
 	}
 
 	router := gin.Default()
-	
+
 	server := &WebServer{
 		userService: userService,
 		router:      router,
 	}
-	
+
 	server.setupRoutes()
 	return server, nil
 }
@@ -164,11 +164,11 @@ func (s *WebServer) setupRoutes() {
 	// User endpoints
 	s.router.GET("/user/:id", s.getUser)
 	s.router.DELETE("/user/:id/cache", s.invalidateUserCache)
-	
+
 	// Cache management endpoints
 	s.router.GET("/cache/stats", s.getCacheStats)
 	s.router.DELETE("/cache/clear", s.clearCache)
-	
+
 	// Health check
 	s.router.GET("/health", s.healthCheck)
 }
@@ -185,7 +185,7 @@ func (s *WebServer) getUser(c *gin.Context) {
 
 	// Add timing for demonstration
 	start := time.Now()
-	
+
 	user, err := s.userService.GetUser(userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -230,15 +230,15 @@ func (s *WebServer) invalidateUserCache(c *gin.Context) {
 
 func (s *WebServer) getCacheStats(c *gin.Context) {
 	stats := s.userService.GetCache().Stats()
-	
+
 	c.JSON(http.StatusOK, gin.H{
 		"stats": gin.H{
-			"hits":       stats.Hits(),
-			"misses":     stats.Misses(),
-			"hit_rate":   fmt.Sprintf("%.2f%%", stats.HitRate()),
-			"evictions":  stats.Evictions(),
-			"key_count":  stats.KeyCount(),
-			"capacity":   s.userService.GetCache().Capacity(),
+			"hits":      stats.Hits(),
+			"misses":    stats.Misses(),
+			"hit_rate":  fmt.Sprintf("%.2f%%", stats.HitRate()),
+			"evictions": stats.Evictions(),
+			"key_count": stats.KeyCount(),
+			"capacity":  s.userService.GetCache().Capacity(),
 		},
 	})
 }
@@ -260,7 +260,7 @@ func (s *WebServer) clearCache(c *gin.Context) {
 func (s *WebServer) healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "healthy",
-		"cache": "operational",
+		"cache":  "operational",
 	})
 }
 
@@ -276,7 +276,7 @@ func (s *WebServer) Run(addr string) error {
 func main() {
 	// Configure logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	
+
 	server, err := NewWebServer()
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
@@ -292,7 +292,7 @@ func main() {
 	log.Printf("  GET  http://localhost:%s/user/123", port)
 	log.Printf("  GET  http://localhost:%s/cache/stats", port)
 	log.Printf("  DELETE http://localhost:%s/user/123/cache", port)
-	
+
 	if err := server.Run(":" + port); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}

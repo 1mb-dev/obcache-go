@@ -39,16 +39,16 @@ type Product struct {
 
 // ProductAnalytics represents product analytics data
 type ProductAnalytics struct {
-	ProductID    int     `json:"product_id"`
-	ViewCount    int     `json:"view_count"`
+	ProductID     int     `json:"product_id"`
+	ViewCount     int     `json:"view_count"`
 	PurchaseCount int     `json:"purchase_count"`
-	Rating       float64 `json:"rating"`
-	LastViewed   string  `json:"last_viewed"`
+	Rating        float64 `json:"rating"`
+	LastViewed    string  `json:"last_viewed"`
 }
 
 // ProductService simulates a database service
 type ProductService struct {
-	products map[int]*Product
+	products  map[int]*Product
 	analytics map[int]*ProductAnalytics
 }
 
@@ -76,16 +76,16 @@ func NewProductService() *ProductService {
 func (s *ProductService) GetProduct(id int) (*Product, error) {
 	// Simulate database latency
 	time.Sleep(80 * time.Millisecond)
-	
+
 	product, exists := s.products[id]
 	if !exists {
 		return nil, fmt.Errorf("product not found: %d", id)
 	}
-	
+
 	// Simulate dynamic updates
 	productCopy := *product
 	productCopy.UpdatedAt = time.Now().Format(time.RFC3339)
-	
+
 	log.Printf("Database query executed for product ID: %d", id)
 	return &productCopy, nil
 }
@@ -93,17 +93,17 @@ func (s *ProductService) GetProduct(id int) (*Product, error) {
 func (s *ProductService) GetProductAnalytics(id int) (*ProductAnalytics, error) {
 	// Simulate expensive analytics computation
 	time.Sleep(200 * time.Millisecond)
-	
+
 	analytics, exists := s.analytics[id]
 	if !exists {
 		return nil, fmt.Errorf("analytics not found for product: %d", id)
 	}
-	
+
 	// Simulate view count increment
 	analyticsCopy := *analytics
 	analyticsCopy.ViewCount++
 	analyticsCopy.LastViewed = time.Now().Format(time.RFC3339)
-	
+
 	log.Printf("Analytics computation executed for product ID: %d", id)
 	return &analyticsCopy, nil
 }
@@ -111,7 +111,7 @@ func (s *ProductService) GetProductAnalytics(id int) (*ProductAnalytics, error) 
 func (s *ProductService) GetProductsByCategory(category string) ([]*Product, error) {
 	// Simulate complex query
 	time.Sleep(150 * time.Millisecond)
-	
+
 	var results []*Product
 	for _, product := range s.products {
 		if product.Category == category {
@@ -120,7 +120,7 @@ func (s *ProductService) GetProductsByCategory(category string) ([]*Product, err
 			results = append(results, &productCopy)
 		}
 	}
-	
+
 	log.Printf("Category query executed for: %s", category)
 	return results, nil
 }
@@ -129,30 +129,30 @@ func (s *ProductService) GetProductsByCategory(category string) ([]*Product, err
 type CacheManager struct {
 	// L1 Cache: Memory-based, fast access for hot data
 	l1Cache *obcache.Cache
-	
+
 	// L2 Cache: Redis-based, shared across instances, larger capacity
 	l2Cache *obcache.Cache
-	
+
 	// Analytics Cache: LFU eviction for frequently accessed analytics
 	analyticsCache *obcache.Cache
-	
+
 	productService *ProductService
-	
+
 	// Cached functions
-	getProduct           func(int) (*Product, error)
-	getProductAnalytics  func(int) (*ProductAnalytics, error)
+	getProduct            func(int) (*Product, error)
+	getProductAnalytics   func(int) (*ProductAnalytics, error)
 	getProductsByCategory func(string) ([]*Product, error)
 }
 
 func NewCacheManager() (*CacheManager, error) {
 	productService := NewProductService()
-	
+
 	// L1 Cache: Memory-based with LRU eviction for recent data
 	l1Config := obcache.NewDefaultConfig().
 		WithMaxEntries(500).
 		WithLRUEviction().
 		WithDefaultTTL(2 * time.Minute)
-	
+
 	l1Cache, err := obcache.New(l1Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create L1 cache: %w", err)
@@ -172,7 +172,7 @@ func NewCacheManager() (*CacheManager, error) {
 			WithDefaultTTL(15 * time.Minute)
 		l2Cache, err = obcache.New(l2Config)
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create L2 cache: %w", err)
 	}
@@ -182,7 +182,7 @@ func NewCacheManager() (*CacheManager, error) {
 		WithMaxEntries(1000).
 		WithLFUEviction(). // Use LFU for analytics as popular products are accessed frequently
 		WithDefaultTTL(30 * time.Minute)
-	
+
 	analyticsCache, err := obcache.New(analyticsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create analytics cache: %w", err)
@@ -190,7 +190,7 @@ func NewCacheManager() (*CacheManager, error) {
 
 	// Set up cache hooks for monitoring
 	setupCacheHooks(l1Cache, "L1")
-	setupCacheHooks(l2Cache, "L2") 
+	setupCacheHooks(l2Cache, "L2")
 	setupCacheHooks(analyticsCache, "Analytics")
 
 	manager := &CacheManager{
@@ -258,7 +258,7 @@ func NewAPIServer() (*APIServer, error) {
 	}
 
 	e := echo.New()
-	
+
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -268,7 +268,7 @@ func NewAPIServer() (*APIServer, error) {
 		cacheManager: cacheManager,
 		echo:         e,
 	}
-	
+
 	server.setupRoutes()
 	return server, nil
 }
@@ -276,19 +276,19 @@ func NewAPIServer() (*APIServer, error) {
 func (s *APIServer) setupRoutes() {
 	// Add cache timing middleware
 	s.echo.Use(s.cacheTimingMiddleware)
-	
+
 	api := s.echo.Group("/api")
-	
+
 	// Product endpoints
 	api.GET("/products/:id", s.getProduct)
 	api.GET("/products/:id/analytics", s.getProductAnalytics)
 	api.GET("/categories/:category/products", s.getProductsByCategory)
-	
+
 	// Cache management
 	api.GET("/cache/stats", s.getCacheStats)
 	api.DELETE("/cache/:cache_name/clear", s.clearCache)
 	api.DELETE("/products/:id/cache", s.invalidateProductCache)
-	
+
 	// Health check
 	s.echo.GET("/health", s.healthCheck)
 }
@@ -296,19 +296,19 @@ func (s *APIServer) setupRoutes() {
 func (s *APIServer) cacheTimingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		start := time.Now()
-		
+
 		// Add timing context
 		c.Set("request_start", start)
-		
+
 		err := next(c)
-		
+
 		duration := time.Since(start)
 		c.Response().Header().Set("X-Response-Time", duration.String())
-		
+
 		// Determine if request was likely served from cache
 		cached := duration < 50*time.Millisecond
 		c.Response().Header().Set("X-Cache-Hit", strconv.FormatBool(cached))
-		
+
 		return err
 	}
 }
@@ -327,7 +327,7 @@ func (s *APIServer) getProduct(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"product": product,
-		"cached": true, // This will be overridden by middleware if needed
+		"cached":  true, // This will be overridden by middleware if needed
 	})
 }
 
@@ -373,32 +373,32 @@ func (s *APIServer) getCacheStats(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"l1_cache": map[string]interface{}{
-			"hits":      l1Stats.Hits(),
-			"misses":    l1Stats.Misses(),
-			"hit_rate":  fmt.Sprintf("%.2f%%", l1Stats.HitRate()),
-			"keys":      l1Stats.KeyCount(),
-			"capacity":  s.cacheManager.l1Cache.Capacity(),
+			"hits":     l1Stats.Hits(),
+			"misses":   l1Stats.Misses(),
+			"hit_rate": fmt.Sprintf("%.2f%%", l1Stats.HitRate()),
+			"keys":     l1Stats.KeyCount(),
+			"capacity": s.cacheManager.l1Cache.Capacity(),
 		},
 		"l2_cache": map[string]interface{}{
-			"hits":      l2Stats.Hits(),
-			"misses":    l2Stats.Misses(),
-			"hit_rate":  fmt.Sprintf("%.2f%%", l2Stats.HitRate()),
-			"keys":      l2Stats.KeyCount(),
-			"capacity":  s.cacheManager.l2Cache.Capacity(),
+			"hits":     l2Stats.Hits(),
+			"misses":   l2Stats.Misses(),
+			"hit_rate": fmt.Sprintf("%.2f%%", l2Stats.HitRate()),
+			"keys":     l2Stats.KeyCount(),
+			"capacity": s.cacheManager.l2Cache.Capacity(),
 		},
 		"analytics_cache": map[string]interface{}{
-			"hits":      analyticsStats.Hits(),
-			"misses":    analyticsStats.Misses(),
-			"hit_rate":  fmt.Sprintf("%.2f%%", analyticsStats.HitRate()),
-			"keys":      analyticsStats.KeyCount(),
-			"capacity":  s.cacheManager.analyticsCache.Capacity(),
+			"hits":     analyticsStats.Hits(),
+			"misses":   analyticsStats.Misses(),
+			"hit_rate": fmt.Sprintf("%.2f%%", analyticsStats.HitRate()),
+			"keys":     analyticsStats.KeyCount(),
+			"capacity": s.cacheManager.analyticsCache.Capacity(),
 		},
 	})
 }
 
 func (s *APIServer) clearCache(c echo.Context) error {
 	cacheName := c.Param("cache_name")
-	
+
 	var cache *obcache.Cache
 	switch cacheName {
 	case "l1":
@@ -465,7 +465,7 @@ func (s *APIServer) Start(address string) error {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	
+
 	server, err := NewAPIServer()
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)

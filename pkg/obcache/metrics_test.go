@@ -186,7 +186,7 @@ func TestMetricsIntegration(t *testing.T) {
 	_ = cache.Delete("key1")
 
 	// Give metrics exporter time to record operations
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(TestSlowOperation)
 
 	// Verify operations were recorded
 	if !mockExporter.HasOperation(metrics.OperationSet) {
@@ -211,7 +211,7 @@ func TestMetricsPeriodicReporting(t *testing.T) {
 		CacheName: "test-cache",
 		Labels:    make(metrics.Labels),
 	})
-	config.Metrics.ReportingInterval = 50 * time.Millisecond // Fast interval for testing
+	config.Metrics.ReportingInterval = TestMetricsReportInterval // Fast interval for testing
 
 	cache, err := New(config)
 	if err != nil {
@@ -312,7 +312,7 @@ func TestMetricsErrorHandling(t *testing.T) {
 		CacheName: "error-test",
 		Labels:    make(metrics.Labels),
 	})
-	config.Metrics.ReportingInterval = 30 * time.Millisecond
+	config.Metrics.ReportingInterval = TestMetricsReportInterval
 
 	cache, err := New(config)
 	if err != nil {
@@ -324,7 +324,7 @@ func TestMetricsErrorHandling(t *testing.T) {
 	_ = cache.Set("key1", "value1", time.Hour)
 	_, _ = cache.Get("key1")
 
-	time.Sleep(100 * time.Millisecond) // Let metrics reporter run
+	time.Sleep(TestSlowOperation) // Let metrics reporter run
 
 	// Cache should still function normally despite metrics errors
 	value, found := cache.Get("key1")

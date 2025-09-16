@@ -202,9 +202,9 @@ func TestCacheStatsTableDriven(t *testing.T) {
 			name: "hit and miss counts",
 			operations: func(c *Cache) {
 				_ = c.Set("key1", "value1", time.Hour) // Test setup
-				c.Get("key1") // hit
-				c.Get("key2") // miss
-				c.Get("key1") // hit
+				c.Get("key1")                          // hit
+				c.Get("key2")                          // miss
+				c.Get("key1")                          // hit
 			},
 			verify: func(t *testing.T, s *Stats) {
 				if s.Hits() != 2 {
@@ -225,7 +225,7 @@ func TestCacheStatsTableDriven(t *testing.T) {
 				_ = c.Set("key1", "value1", time.Hour) // Test setup
 				_ = c.Set("key2", "value2", time.Hour) // Test setup
 				_ = c.Set("key3", "value3", time.Hour) // Test setup
-				_ = c.Delete("key2") // Test operation
+				_ = c.Delete("key2")                   // Test operation
 			},
 			verify: func(t *testing.T, s *Stats) {
 				if s.KeyCount() != 2 {
