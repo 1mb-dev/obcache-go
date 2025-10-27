@@ -105,7 +105,7 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 
 // executeWrappedFunction handles the core wrapping logic
 func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value) []reflect.Value {
-	_, keyArgs := extractContextAndArgs(fnType, args)
+	ctx, keyArgs := extractContextAndArgs(fnType, args)
 	key := opts.KeyFunc(keyArgs)
 
 	// If caching is disabled, call original function directly
@@ -115,12 +115,12 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 
 	hasErrorReturn := hasErrorReturn(fnType)
 
-	// Try to get from cache first
-	if cachedValue, found := cache.Get(key); found {
+	// Try to get from cache first using context
+	if cachedValue, found := cache.GetContext(ctx, key); found {
 		return convertCachedValue(cachedValue, fnType, hasErrorReturn)
 	}
 
-	return executeFunctionWithSingleflight(cache, fnValue, fnType, opts, args, key, hasErrorReturn)
+	return executeFunctionWithSingleflight(cache, ctx, fnValue, fnType, opts, args, key, hasErrorReturn)
 }
 
 // extractContextAndArgs extracts context and key args from function arguments
@@ -155,7 +155,7 @@ func hasErrorReturn(fnType reflect.Type) bool {
 }
 
 // executeFunctionWithSingleflight executes the function with singleflight pattern
-func executeFunctionWithSingleflight(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value, key string, hasErrorReturn bool) []reflect.Value {
+func executeFunctionWithSingleflight(cache *Cache, ctx context.Context, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value, key string, hasErrorReturn bool) []reflect.Value {
 	// Use singleflight to prevent duplicate calls
 	compute := func() (any, error) {
 		results := fnValue.Call(args)
@@ -175,7 +175,7 @@ func executeFunctionWithSingleflight(cache *Cache, fnValue reflect.Value, fnType
 			if errorTTL == 0 {
 				errorTTL = opts.TTL
 			}
-			_ = cache.Set(key, cachedError{Err: err}, errorTTL) // Cache error
+			_ = cache.SetContext(ctx, key, cachedError{Err: err}, errorTTL) // Cache error with context
 		}
 		// Return the error in the function's expected format
 		return createErrorReturn(fnType, err)
@@ -183,7 +183,7 @@ func executeFunctionWithSingleflight(cache *Cache, fnValue reflect.Value, fnType
 
 	// Store in cache if this wasn't a shared call
 	if !shared {
-		_ = cache.Set(key, value, opts.TTL) // Cache result
+		_ = cache.SetContext(ctx, key, value, opts.TTL) // Cache result with context
 	}
 
 	// Convert the result back to the expected format

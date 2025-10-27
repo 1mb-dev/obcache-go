@@ -198,7 +198,14 @@ func createRedisStore(config *Config) (store.Store, error) {
 }
 
 // Get retrieves a value from the cache by key
+// For context-aware operations, use GetContext instead
 func (c *Cache) Get(key string) (any, bool) {
+	return c.GetContext(context.Background(), key)
+}
+
+// GetContext retrieves a value from the cache by key with context support
+// The context can be used for cancellation, timeouts, and trace propagation
+func (c *Cache) GetContext(ctx context.Context, key string) (any, bool) {
 	start := time.Now()
 	defer func() {
 		c.recordCacheOperation(metrics.OperationGet, time.Since(start))
@@ -206,7 +213,6 @@ func (c *Cache) Get(key string) (any, bool) {
 
 	var result any
 	var found bool
-	ctx := context.Background()
 
 	c.rlock(func() {
 		entry, ok := c.store.Get(key)
@@ -230,7 +236,14 @@ func (c *Cache) Get(key string) (any, bool) {
 }
 
 // Set stores a value in the cache with the specified key and TTL
+// For context-aware operations, use SetContext instead
 func (c *Cache) Set(key string, value any, ttl time.Duration) error {
+	return c.SetContext(context.Background(), key, value, ttl)
+}
+
+// SetContext stores a value in the cache with context support
+// The context can be used for cancellation, timeouts, and trace propagation
+func (c *Cache) SetContext(ctx context.Context, key string, value any, ttl time.Duration) error {
 	start := time.Now()
 	defer func() {
 		c.recordCacheOperation(metrics.OperationSet, time.Since(start))

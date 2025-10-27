@@ -58,30 +58,34 @@ func NewWithCleanup(capacity int, cleanupInterval time.Duration) (*Store, error)
 // Get retrieves an entry by key
 func (s *Store) Get(key string) (*entry.Entry, bool) {
 	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-
 	entry, found := s.cache.Get(key)
 	if !found {
+		s.mutex.RUnlock()
 		return nil, false
 	}
 
 	// Check if entry has expired
 	if entry.IsExpired() {
-		// Remove expired entry (do this in a separate goroutine to avoid deadlock)
-		go func() {
-			s.mutex.Lock()
-			s.cache.Remove(key)
-			s.mutex.Unlock()
+		// Upgrade to write lock to remove expired entry synchronously
+		s.mutex.RUnlock()
+		s.mutex.Lock()
 
+		// Double-check after acquiring write lock (race condition protection)
+		entry, found = s.cache.Peek(key)
+		if found && entry.IsExpired() {
+			s.cache.Remove(key)
+			// Call cleanup callback if set
 			if s.cleanupCallback != nil {
 				s.cleanupCallback(key, entry.Value)
 			}
-		}()
+		}
+		s.mutex.Unlock()
 		return nil, false
 	}
 
 	// Touch the entry for LRU
 	entry.Touch()
+	s.mutex.RUnlock()
 	return entry, true
 }
 
