@@ -1,6 +1,7 @@
 package obcache
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -213,20 +214,19 @@ func TestEvictionCallbacks(t *testing.T) {
 	evictedKeys := make([]string, 0)
 	evictedValues := make([]any, 0)
 
+	hooks := NewHooks()
+	hooks.AddOnEvict(func(_ context.Context, key string, value any, reason EvictReason) {
+		t.Logf("Eviction callback called: key=%s, value=%v, reason=%v", key, value, reason)
+		if reason == EvictReasonCapacity {
+			evictedKeys = append(evictedKeys, key)
+			evictedValues = append(evictedValues, value)
+		}
+	})
+
 	config := NewDefaultConfig().
 		WithMaxEntries(2).
 		WithEvictionType(eviction.FIFO).
-		WithHooks(&Hooks{
-			OnEvict: []OnEvictHook{
-				func(key string, value any, reason EvictReason) {
-					t.Logf("Eviction callback called: key=%s, value=%v, reason=%v", key, value, reason)
-					if reason == EvictReasonCapacity {
-						evictedKeys = append(evictedKeys, key)
-						evictedValues = append(evictedValues, value)
-					}
-				},
-			},
-		})
+		WithHooks(hooks)
 
 	cache, err := New(config)
 	if err != nil {

@@ -1,6 +1,7 @@
 package obcache
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -71,11 +72,9 @@ func TestWithKeyGenFunc(t *testing.T) {
 }
 
 func TestWithHooks(t *testing.T) {
-	hooks := &Hooks{
-		OnHit: []OnHitHook{
-			func(_ string, _ any) {},
-		},
-	}
+	hooks := NewHooks()
+	hooks.AddOnHit(func(_ context.Context, _ string, _ any) {})
+
 	config := NewDefaultConfig().WithHooks(hooks)
 
 	if config.Hooks != hooks {
@@ -89,11 +88,8 @@ func TestConfigBuilder(t *testing.T) {
 		return testKeyConst
 	}
 
-	hooks := &Hooks{
-		OnHit: []OnHitHook{
-			func(_ string, _ any) {},
-		},
-	}
+	hooks := NewHooks()
+	hooks.AddOnHit(func(_ context.Context, _ string, _ any) {})
 
 	config := NewDefaultConfig().
 		WithMaxEntries(200).

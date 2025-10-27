@@ -558,10 +558,10 @@ func BenchmarkHooksNoHooks(b *testing.B) {
 	}
 }
 
-func BenchmarkHooksWithLegacyHooks(b *testing.B) {
-	hooks := &Hooks{}
-	hooks.AddOnHit(func(string, any) {})
-	hooks.AddOnMiss(func(string) {})
+func BenchmarkHooksBasic(b *testing.B) {
+	hooks := NewHooks()
+	hooks.AddOnHit(func(context.Context, string, any) {})
+	hooks.AddOnMiss(func(context.Context, string) {})
 
 	cache, err := New(NewDefaultConfig().WithHooks(hooks))
 	if err != nil {
@@ -578,12 +578,12 @@ func BenchmarkHooksWithLegacyHooks(b *testing.B) {
 	}
 }
 
-func BenchmarkHooksWithPriorityHooks(b *testing.B) {
-	hooks := &Hooks{}
-	hooks.AddOnHitWithPriority(func(string, any) {}, HookPriorityHigh)
-	hooks.AddOnHitWithPriority(func(string, any) {}, HookPriorityMedium)
-	hooks.AddOnHitWithPriority(func(string, any) {}, HookPriorityLow)
-	hooks.AddOnMissWithPriority(func(string) {}, HookPriorityMedium)
+func BenchmarkHooksWithPriority(b *testing.B) {
+	hooks := NewHooks()
+	hooks.AddOnHit(func(context.Context, string, any) {}, WithPriority(100))
+	hooks.AddOnHit(func(context.Context, string, any) {}, WithPriority(50))
+	hooks.AddOnHit(func(context.Context, string, any) {}, WithPriority(10))
+	hooks.AddOnMiss(func(context.Context, string) {}, WithPriority(50))
 
 	cache, err := New(NewDefaultConfig().WithHooks(hooks))
 	if err != nil {
@@ -600,12 +600,14 @@ func BenchmarkHooksWithPriorityHooks(b *testing.B) {
 	}
 }
 
-func BenchmarkHooksWithConditionalHooks(b *testing.B) {
-	hooks := &Hooks{}
-	hooks.AddOnHitCtxIf(func(context.Context, string, any, []any) {},
-		KeyPrefixCondition("key-"))
-	hooks.AddOnMissCtxIf(func(context.Context, string, []any) {},
-		func(context.Context, string, []any) bool { return true })
+func BenchmarkHooksWithConditions(b *testing.B) {
+	hooks := NewHooks()
+	hooks.AddOnHit(func(context.Context, string, any) {},
+		WithCondition(func(_ context.Context, key string) bool {
+			return len(key) >= 4 && key[:4] == "key-"
+		}))
+	hooks.AddOnMiss(func(context.Context, string) {},
+		WithCondition(func(context.Context, string) bool { return true }))
 
 	cache, err := New(NewDefaultConfig().WithHooks(hooks))
 	if err != nil {
@@ -623,16 +625,18 @@ func BenchmarkHooksWithConditionalHooks(b *testing.B) {
 }
 
 func BenchmarkHooksComprehensive(b *testing.B) {
-	hooks := &Hooks{}
-	// Legacy hooks
-	hooks.AddOnHit(func(string, any) {})
-	hooks.AddOnMiss(func(string) {})
+	hooks := NewHooks()
+	// Basic hooks
+	hooks.AddOnHit(func(context.Context, string, any) {})
+	hooks.AddOnMiss(func(context.Context, string) {})
 	// Priority hooks
-	hooks.AddOnHitWithPriority(func(string, any) {}, HookPriorityHigh)
-	hooks.AddOnMissWithPriority(func(string) {}, HookPriorityLow)
+	hooks.AddOnHit(func(context.Context, string, any) {}, WithPriority(100))
+	hooks.AddOnMiss(func(context.Context, string) {}, WithPriority(10))
 	// Conditional hooks
-	hooks.AddOnHitCtxIf(func(context.Context, string, any, []any) {},
-		KeyPrefixCondition("key-"))
+	hooks.AddOnHit(func(context.Context, string, any) {},
+		WithCondition(func(_ context.Context, key string) bool {
+			return len(key) >= 4 && key[:4] == "key-"
+		}))
 
 	cache, err := New(NewDefaultConfig().WithHooks(hooks))
 	if err != nil {
@@ -650,9 +654,9 @@ func BenchmarkHooksComprehensive(b *testing.B) {
 }
 
 func BenchmarkHookConditionEvaluation(b *testing.B) {
-	prefixCondition := KeyPrefixCondition("api:")
-	contextCondition := ContextValueCondition("env", "prod")
-	andCondition := AndCondition(prefixCondition, contextCondition)
+	prefixCondition := func(_ context.Context, key string) bool {
+		return len(key) >= 4 && key[:4] == "api:"
+	}
 
 	type contextKey string
 	const envKey contextKey = "env"
@@ -664,9 +668,7 @@ func BenchmarkHookConditionEvaluation(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("api:endpoint-%d", i%100)
 		// Benchmark condition evaluation overhead
-		_ = prefixCondition(ctx, key, nil)
-		_ = contextCondition(ctx, key, nil)
-		_ = andCondition(ctx, key, nil)
+		_ = prefixCondition(ctx, key)
 	}
 }
 

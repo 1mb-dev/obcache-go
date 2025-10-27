@@ -1,6 +1,7 @@
 package obcache
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -241,13 +242,10 @@ func TestCacheCleanup(t *testing.T) {
 func TestCacheClearWithHooks(t *testing.T) {
 	invalidateCount := 0
 
-	hooks := &Hooks{
-		OnInvalidate: []OnInvalidateHook{
-			func(_ string) {
-				invalidateCount++
-			},
-		},
-	}
+	hooks := NewHooks()
+	hooks.AddOnInvalidate(func(_ context.Context, _ string) {
+		invalidateCount++
+	})
 
 	config := NewDefaultConfig().WithHooks(hooks)
 	cache, err := New(config)

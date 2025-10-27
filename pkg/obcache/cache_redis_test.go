@@ -104,14 +104,14 @@ func TestCacheWithRedisStoreAndHooks(t *testing.T) {
 	missCalled := false
 	invalidateCalled := false
 
-	hooks := &Hooks{}
-	hooks.AddOnHit(func(key string, value any) {
+	hooks := NewHooks()
+	hooks.AddOnHit(func(ctx context.Context, key string, value any) {
 		hitCalled = true
 	})
-	hooks.AddOnMiss(func(key string) {
+	hooks.AddOnMiss(func(ctx context.Context, key string) {
 		missCalled = true
 	})
-	hooks.AddOnInvalidate(func(key string) {
+	hooks.AddOnInvalidate(func(ctx context.Context, key string) {
 		invalidateCalled = true
 	})
 
