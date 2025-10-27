@@ -98,13 +98,8 @@ func New(config *Config) (*Cache, error) {
 		lruStore.SetEvictCallback(func(key string, value any) {
 			cache.stats.incEvictions()
 			if cache.hooks != nil {
-				// Use EvictReasonCapacity for strategy-based evictions
-				// Check if this is the new strategy store
-				if _, isStrategyStore := cacheStore.(*memory.StrategyStore); isStrategyStore {
-					cache.hooks.invokeOnEvict(key, value, EvictReasonCapacity)
-				} else {
-					cache.hooks.invokeOnEvict(key, value, EvictReasonLRU)
-				}
+				// All memory stores now use StrategyStore which evicts based on capacity
+				cache.hooks.invokeOnEvict(key, value, EvictReasonCapacity)
 			}
 		})
 	}
@@ -129,25 +124,22 @@ func NewSimple(maxEntries int, defaultTTL time.Duration) (*Cache, error) {
 
 // createMemoryStore creates a memory-based store
 func createMemoryStore(config *Config) (store.Store, error) {
-	// Use pluggable eviction strategy if EvictionType is set to non-LRU
-	// For backward compatibility, fall back to the original implementation for LRU
-	if config.EvictionType != "" && config.EvictionType != eviction.LRU {
-		evictionConfig := eviction.Config{
-			Type:     config.EvictionType,
-			Capacity: config.MaxEntries,
-		}
-
-		if config.CleanupInterval > 0 {
-			return memory.NewWithStrategyAndCleanup(evictionConfig, config.CleanupInterval)
-		}
-		return memory.NewWithStrategy(evictionConfig)
+	// Determine eviction type (default to LRU if not specified)
+	evictionType := config.EvictionType
+	if evictionType == "" {
+		evictionType = eviction.LRU
 	}
 
-	// Default to original LRU implementation for compatibility
+	evictionConfig := eviction.Config{
+		Type:     evictionType,
+		Capacity: config.MaxEntries,
+	}
+
+	// Create store with or without cleanup interval
 	if config.CleanupInterval > 0 {
-		return memory.NewWithCleanup(config.MaxEntries, config.CleanupInterval)
+		return memory.NewWithStrategyAndCleanup(evictionConfig, config.CleanupInterval)
 	}
-	return memory.New(config.MaxEntries)
+	return memory.NewWithStrategy(evictionConfig)
 }
 
 // createRedisStore creates a Redis-based store

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -63,16 +64,16 @@ type PrometheusCache struct {
 func NewPrometheusCache(config *obcache.Config) (*PrometheusCache, error) {
 	// Create hooks for real-time metric collection
 	hooks := &obcache.Hooks{}
-	hooks.AddOnHit(func(key string, value any) {
+	hooks.AddOnHit(func(ctx context.Context, key string, value any) {
 		cacheHits.Inc()
 	})
-	hooks.AddOnMiss(func(key string) {
+	hooks.AddOnMiss(func(ctx context.Context, key string) {
 		cacheMisses.Inc()
 	})
-	hooks.AddOnEvict(func(key string, value any, reason obcache.EvictReason) {
+	hooks.AddOnEvict(func(ctx context.Context, key string, value any, reason obcache.EvictReason) {
 		cacheEvictions.WithLabelValues(reason.String()).Inc()
 	})
-	hooks.AddOnInvalidate(func(key string) {
+	hooks.AddOnInvalidate(func(ctx context.Context, key string) {
 		cacheInvalidations.Inc()
 	})
 
@@ -122,7 +123,7 @@ func (pc *PrometheusCache) Set(key string, value any, ttl time.Duration) error {
 
 func (pc *PrometheusCache) Invalidate(key string) error {
 	start := time.Now()
-	err := pc.cache.Invalidate(key)
+	err := pc.cache.Delete(key)
 	duration := time.Since(start).Seconds()
 
 	status := "success"

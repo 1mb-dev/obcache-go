@@ -24,31 +24,32 @@ func NewFIFOStrategy(capacity int) *FIFOStrategy {
 }
 
 // Add adds an entry to the FIFO tracker
-func (f *FIFOStrategy) Add(key string, entry *entry.Entry) (string, bool) {
+func (f *FIFOStrategy) Add(key string, entry *entry.Entry) (string, *entry.Entry, bool) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
 	// If key already exists, update it without changing order
 	if _, exists := f.data[key]; exists {
 		f.data[key] = entry
-		return "", false
+		return "", nil, false
 	}
 
 	// If we're at capacity, evict the first item (oldest)
 	if len(f.data) >= f.capacity && f.capacity > 0 {
 		evictKey := f.order[0]
+		evictedEntry := f.data[evictKey]
 		f.order = f.order[1:] // Remove first element
 		delete(f.data, evictKey)
 
 		f.data[key] = entry
 		f.order = append(f.order, key)
-		return evictKey, true
+		return evictKey, evictedEntry, true
 	}
 
 	// Add new entry
 	f.data[key] = entry
 	f.order = append(f.order, key)
-	return "", false
+	return "", nil, false
 }
 
 // Get retrieves an entry (no ordering change in FIFO)

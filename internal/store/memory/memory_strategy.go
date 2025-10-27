@@ -80,15 +80,11 @@ func (s *StrategyStore) Set(key string, entry *entry.Entry) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	evictedKey, wasEvicted := s.strategy.Add(key, entry)
+	evictedKey, evictedEntry, wasEvicted := s.strategy.Add(key, entry)
 
 	// Call eviction callback if an entry was evicted
-	// Note: The evicted entry is no longer in the strategy, so we can't retrieve its value
-	// This is a limitation of the current design that we'll need to address
-	if wasEvicted && s.evictCallback != nil && evictedKey != "" {
-		// For now, call the callback with a placeholder value
-		// In a production implementation, the strategy would need to return both key and value
-		s.evictCallback(evictedKey, "evicted")
+	if wasEvicted && s.evictCallback != nil && evictedKey != "" && evictedEntry != nil {
+		s.evictCallback(evictedKey, evictedEntry.Value)
 	}
 
 	return nil

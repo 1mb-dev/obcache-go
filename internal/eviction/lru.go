@@ -9,32 +9,47 @@ import (
 
 // LRUStrategy implements the LRU (Least Recently Used) eviction strategy
 type LRUStrategy struct {
-	cache    *lru.Cache[string, *entry.Entry]
-	capacity int
-	mutex    sync.RWMutex
+	cache          *lru.Cache[string, *entry.Entry]
+	capacity       int
+	mutex          sync.RWMutex
+	evictCallback  func(key string, value *entry.Entry)
+	evictedKey     string
+	evictedValue   *entry.Entry
 }
 
 // NewLRUStrategy creates a new LRU eviction strategy
 func NewLRUStrategy(capacity int) *LRUStrategy {
-	cache, err := lru.New[string, *entry.Entry](capacity)
+	s := &LRUStrategy{
+		capacity: capacity,
+	}
+
+	cache, err := lru.NewWithEvict[string, *entry.Entry](capacity, func(key string, value *entry.Entry) {
+		// Store evicted key and value so Add() can return them
+		s.evictedKey = key
+		s.evictedValue = value
+	})
 	if err != nil {
 		// This should not happen with valid capacity, but fallback gracefully
 		panic("failed to create LRU cache: " + err.Error())
 	}
 
-	return &LRUStrategy{
-		cache:    cache,
-		capacity: capacity,
-	}
+	s.cache = cache
+	return s
 }
 
 // Add adds an entry to the LRU tracker
-func (l *LRUStrategy) Add(key string, entry *entry.Entry) (string, bool) {
+func (l *LRUStrategy) Add(key string, entry *entry.Entry) (string, *entry.Entry, bool) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
+	// Clear previous eviction state
+	l.evictedKey = ""
+	l.evictedValue = nil
+
 	evicted := l.cache.Add(key, entry)
-	return "", evicted // LRU library handles eviction internally
+
+	// Return the evicted key and value if an eviction occurred
+	return l.evictedKey, l.evictedValue, evicted
 }
 
 // Get retrieves an entry and marks it as recently used

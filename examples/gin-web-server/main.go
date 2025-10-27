@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -82,8 +83,8 @@ func NewCachedUserService() (*CachedUserService, error) {
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		// Production: Use Redis backend
 		config := obcache.NewRedisConfig(redisURL).
-			WithRedisKeyPrefix("user_cache:").
 			WithDefaultTTL(10 * time.Minute)
+		config.Redis.KeyPrefix = "user_cache:" // Set custom key prefix
 		cache, err = obcache.New(config)
 	} else {
 		// Development: Use memory backend
@@ -100,13 +101,13 @@ func NewCachedUserService() (*CachedUserService, error) {
 
 	// Add cache monitoring hooks
 	hooks := &obcache.Hooks{}
-	hooks.AddOnHit(func(key string, value any) {
+	hooks.AddOnHit(func(ctx context.Context, key string, value any) {
 		log.Printf("Cache HIT for key: %s", key)
 	})
-	hooks.AddOnMiss(func(key string) {
+	hooks.AddOnMiss(func(ctx context.Context, key string) {
 		log.Printf("Cache MISS for key: %s", key)
 	})
-	hooks.AddOnEvict(func(key string, value any, reason obcache.EvictReason) {
+	hooks.AddOnEvict(func(ctx context.Context, key string, value any, reason obcache.EvictReason) {
 		log.Printf("Cache EVICT: key=%s, reason=%s", key, reason)
 	})
 
@@ -238,7 +239,6 @@ func (s *WebServer) getCacheStats(c *gin.Context) {
 			"hit_rate":  fmt.Sprintf("%.2f%%", stats.HitRate()),
 			"evictions": stats.Evictions(),
 			"key_count": stats.KeyCount(),
-			"capacity":  s.userService.GetCache().Capacity(),
 		},
 	})
 }

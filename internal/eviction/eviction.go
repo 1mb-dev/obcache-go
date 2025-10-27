@@ -7,8 +7,8 @@ import (
 // Strategy defines the interface for eviction strategies
 type Strategy interface {
 	// Add adds an entry to the eviction strategy tracker
-	// Returns the key of an entry to evict if capacity is exceeded, empty string otherwise
-	Add(key string, entry *entry.Entry) (evictKey string, evicted bool)
+	// Returns the key and entry of an evicted item if capacity is exceeded
+	Add(key string, entry *entry.Entry) (evictKey string, evictedEntry *entry.Entry, evicted bool)
 
 	// Get retrieves an entry and updates its position in the eviction order
 	Get(key string) (*entry.Entry, bool)

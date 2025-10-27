@@ -24,7 +24,7 @@ func NewLFUStrategy(capacity int) *LFUStrategy {
 }
 
 // Add adds an entry to the LFU tracker
-func (l *LFUStrategy) Add(key string, entry *entry.Entry) (string, bool) {
+func (l *LFUStrategy) Add(key string, entry *entry.Entry) (string, *entry.Entry, bool) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -32,25 +32,26 @@ func (l *LFUStrategy) Add(key string, entry *entry.Entry) (string, bool) {
 	if _, exists := l.data[key]; exists {
 		l.data[key] = entry
 		l.frequencies[key]++
-		return "", false
+		return "", nil, false
 	}
 
 	// If we're at capacity, evict the least frequently used item
 	if len(l.data) >= l.capacity {
 		evictKey := l.findLFU()
 		if evictKey != "" {
+			evictedEntry := l.data[evictKey]
 			delete(l.data, evictKey)
 			delete(l.frequencies, evictKey)
 			l.data[key] = entry
 			l.frequencies[key] = 1
-			return evictKey, true
+			return evictKey, evictedEntry, true
 		}
 	}
 
 	// Add new entry
 	l.data[key] = entry
 	l.frequencies[key] = 1
-	return "", false
+	return "", nil, false
 }
 
 // Get retrieves an entry and increments its frequency

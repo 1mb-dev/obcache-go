@@ -17,13 +17,13 @@ func TestLRUStrategy(t *testing.T) {
 	// Test basic operations
 	t.Run("BasicOperations", func(t *testing.T) {
 		// Add first entry
-		evictKey, evicted := strategy.Add("key1", createTestEntry("value1"))
+		evictKey, _, evicted := strategy.Add("key1", createTestEntry("value1"))
 		if evicted {
 			t.Errorf("Expected no eviction, but got eviction of key: %s", evictKey)
 		}
 
 		// Add second entry
-		evictKey, evicted = strategy.Add("key2", createTestEntry("value2"))
+		evictKey, _, evicted = strategy.Add("key2", createTestEntry("value2"))
 		if evicted {
 			t.Errorf("Expected no eviction, but got eviction of key: %s", evictKey)
 		}
@@ -33,7 +33,7 @@ func TestLRUStrategy(t *testing.T) {
 		}
 
 		// Add third entry (should evict)
-		_, evicted = strategy.Add("key3", createTestEntry("value3"))
+		_, _, evicted = strategy.Add("key3", createTestEntry("value3"))
 		if !evicted {
 			t.Error("Expected eviction when exceeding capacity")
 		}
@@ -45,7 +45,7 @@ func TestLRUStrategy(t *testing.T) {
 
 	t.Run("GetAndContains", func(t *testing.T) {
 		strategy.Clear()
-		strategy.Add("key1", createTestEntry("value1"))
+		_, _, _ = strategy.Add("key1", createTestEntry("value1"))
 
 		entry, found := strategy.Get("key1")
 		if !found {
@@ -66,8 +66,8 @@ func TestLRUStrategy(t *testing.T) {
 
 	t.Run("RemoveAndClear", func(t *testing.T) {
 		strategy.Clear()
-		strategy.Add("key1", createTestEntry("value1"))
-		strategy.Add("key2", createTestEntry("value2"))
+		_, _, _ = strategy.Add("key1", createTestEntry("value1"))
+		_, _, _ = strategy.Add("key2", createTestEntry("value2"))
 
 		removed := strategy.Remove("key1")
 		if !removed {
@@ -90,8 +90,8 @@ func TestLFUStrategy(t *testing.T) {
 
 	t.Run("FrequencyBasedEviction", func(t *testing.T) {
 		// Add two entries
-		strategy.Add("key1", createTestEntry("value1"))
-		strategy.Add("key2", createTestEntry("value2"))
+		_, _, _ = strategy.Add("key1", createTestEntry("value1"))
+		_, _, _ = strategy.Add("key2", createTestEntry("value2"))
 
 		// Access key1 multiple times to increase its frequency
 		strategy.Get("key1")
@@ -99,7 +99,7 @@ func TestLFUStrategy(t *testing.T) {
 		strategy.Get("key2") // key2 has frequency 2, key1 has frequency 3
 
 		// Add third entry - should evict key2 (least frequent)
-		_, evicted := strategy.Add("key3", createTestEntry("value3"))
+		_, _, evicted := strategy.Add("key3", createTestEntry("value3"))
 		if !evicted {
 			t.Error("Expected eviction when exceeding capacity")
 		}
@@ -118,7 +118,7 @@ func TestLFUStrategy(t *testing.T) {
 
 	t.Run("PeekDoesNotUpdateFrequency", func(t *testing.T) {
 		strategy.Clear()
-		strategy.Add("key1", createTestEntry("value1"))
+		_, _, _ = strategy.Add("key1", createTestEntry("value1"))
 
 		// Peek should not affect frequency
 		entry, found := strategy.Peek("key1")
@@ -130,10 +130,10 @@ func TestLFUStrategy(t *testing.T) {
 		}
 
 		// Add more entries to test that peek didn't change frequency
-		strategy.Add("key2", createTestEntry("value2"))
+		_, _, _ = strategy.Add("key2", createTestEntry("value2"))
 		strategy.Get("key2") // Make key2 more frequent than key1
 
-		_, evicted := strategy.Add("key3", createTestEntry("value3"))
+		_, _, evicted := strategy.Add("key3", createTestEntry("value3"))
 		if !evicted {
 			t.Error("Expected eviction when exceeding capacity")
 		}
@@ -150,14 +150,14 @@ func TestFIFOStrategy(t *testing.T) {
 
 	t.Run("FIFOEviction", func(t *testing.T) {
 		// Add two entries
-		strategy.Add("key1", createTestEntry("value1"))
-		strategy.Add("key2", createTestEntry("value2"))
+		_, _, _ = strategy.Add("key1", createTestEntry("value1"))
+		_, _, _ = strategy.Add("key2", createTestEntry("value2"))
 
 		// Access key1 (should not change eviction order in FIFO)
 		strategy.Get("key1")
 
 		// Add third entry - should evict key1 (first in)
-		_, evicted := strategy.Add("key3", createTestEntry("value3"))
+		_, _, evicted := strategy.Add("key3", createTestEntry("value3"))
 		if !evicted {
 			t.Error("Expected eviction when exceeding capacity")
 		}
@@ -176,9 +176,9 @@ func TestFIFOStrategy(t *testing.T) {
 
 	t.Run("InsertionOrder", func(t *testing.T) {
 		strategy.Clear()
-		strategy.Add("third", createTestEntry("3"))
-		strategy.Add("first", createTestEntry("1"))
-		strategy.Add("second", createTestEntry("2"))
+		_, _, _ = strategy.Add("third", createTestEntry("3"))
+		_, _, _ = strategy.Add("first", createTestEntry("1"))
+		_, _, _ = strategy.Add("second", createTestEntry("2"))
 
 		keys := strategy.Keys()
 		expectedOrder := []string{"first", "second"} // third was evicted
@@ -222,7 +222,7 @@ func TestStrategyFactory(t *testing.T) {
 			}
 
 			// Test basic operations
-			evictKey, evicted := strategy.Add("test", createTestEntry("value"))
+			evictKey, _, evicted := strategy.Add("test", createTestEntry("value"))
 			if evicted {
 				t.Errorf("Expected no eviction for first entry, got: %s", evictKey)
 			}
@@ -251,7 +251,7 @@ func TestDefaultStrategy(t *testing.T) {
 	}
 
 	// Should behave like LRU (this is a basic check)
-	strategy.Add("key1", createTestEntry("value1"))
+	_, _, _ = strategy.Add("key1", createTestEntry("value1"))
 	if !strategy.Contains("key1") {
 		t.Error("Expected default strategy to work like LRU")
 	}
@@ -270,13 +270,13 @@ func TestCapacityLimits(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Add first entry
-			evictKey, evicted := tc.strategy.Add("key1", createTestEntry("value1"))
+			evictKey, _, evicted := tc.strategy.Add("key1", createTestEntry("value1"))
 			if evicted {
 				t.Errorf("Expected no eviction for first entry, got: %s", evictKey)
 			}
 
 			// Add second entry - should evict first
-			_, evicted = tc.strategy.Add("key2", createTestEntry("value2"))
+			_, _, evicted = tc.strategy.Add("key2", createTestEntry("value2"))
 			if !evicted {
 				t.Error("Expected eviction when capacity is 1")
 			}

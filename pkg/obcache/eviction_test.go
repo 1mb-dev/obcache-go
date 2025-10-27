@@ -263,8 +263,8 @@ func TestEvictionCallbacks(t *testing.T) {
 		t.Errorf("Expected key1 to be evicted (FIFO), got %s", evictedKeys[0])
 	}
 
-	if len(evictedValues) > 0 && evictedValues[0] != "evicted" {
-		t.Errorf("Expected placeholder evicted value, got %v", evictedValues[0])
+	if len(evictedValues) > 0 && evictedValues[0] != "value1" {
+		t.Errorf("Expected evicted value1, got %v", evictedValues[0])
 	}
 }
 
