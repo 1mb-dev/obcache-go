@@ -82,7 +82,6 @@ jobs:
       with:
         version: latest
         args: --timeout=5m
-        skip-config-verify: true
 
   benchmark:
     name: Benchmark
