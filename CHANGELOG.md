@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2025-10-27
+
+### New Features
+
+**Context Propagation Support:**
+- Add `GetContext()` and `SetContext()` methods for context-aware cache operations
+- Enable proper timeout and cancellation propagation throughout the cache layer
+- Support distributed tracing through context in cache operations
+- Propagate context through function wrapping (`Wrap`) for better observability
+- Maintain full backward compatibility with existing `Get()`/`Set()` methods
+
+### Bug Fixes
+
+**Critical:**
+- Fix goroutine leak in memory store expired entry cleanup
+  - Replace unbounded goroutine spawning with synchronous lock upgrade pattern
+  - Implement double-check locking for race condition safety
+  - Prevents resource exhaustion under high load with many expired entries
+
+### Dependency Updates
+
+**Major Updates:**
+- Upgrade Redis client: `v9.6.3` → `v9.16.0` (10 minor versions)
+  - Includes maintenance notification support, trace filtering improvements
+  - Bug fixes and performance enhancements across 10 releases
+- All transitive dependencies updated to Go 1.23-compatible versions
+
+### CI/CD Improvements
+
+**Quality Gates:**
+- Add example build validation to prevent broken documentation
+- Implement coverage threshold enforcement (45% minimum)
+- Improve CI configuration for better reliability
+- Add automated example compilation checks
+
+**Technical Details:**
+- All changes tested with full test suite (100+ tests)
+- Race detector validated on all concurrent operations
+- Zero breaking changes - fully backward compatible
+
 ## [1.0.3] - 2025-09-16
 
 ### Code Quality & Production Readiness
