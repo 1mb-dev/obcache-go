@@ -19,18 +19,6 @@ import (
 	"github.com/vnykmshr/obcache-go/pkg/metrics"
 )
 
-func (c *Cache) rlock(fn func()) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	fn()
-}
-
-func (c *Cache) lock(fn func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	fn()
-}
-
 func (c *Cache) hit(ctx context.Context, key string, value any) {
 	c.stats.incHits()
 	if c.hooks != nil {
@@ -214,23 +202,25 @@ func (c *Cache) GetContext(ctx context.Context, key string) (any, bool) {
 	var result any
 	var found bool
 
-	c.rlock(func() {
-		entry, ok := c.store.Get(key)
-		if !ok {
-			c.miss(ctx, key)
-			return
-		}
+	c.mu.RLock()
+	entry, ok := c.store.Get(key)
+	if !ok {
+		c.mu.RUnlock()
+		c.miss(ctx, key)
+		return result, found
+	}
 
-		value, err := c.decompressValue(entry)
-		if err != nil {
-			c.miss(ctx, key)
-			return
-		}
+	value, err := c.decompressValue(entry)
+	if err != nil {
+		c.mu.RUnlock()
+		c.miss(ctx, key)
+		return result, found
+	}
 
-		c.hit(ctx, key, value)
-		result = value
-		found = true
-	})
+	c.hit(ctx, key, value)
+	result = value
+	found = true
+	c.mu.RUnlock()
 
 	return result, found
 }
@@ -258,13 +248,12 @@ func (c *Cache) SetContext(ctx context.Context, key string, value any, ttl time.
 		return fmt.Errorf("failed to create entry: %w", err)
 	}
 
-	var setErr error
-	c.lock(func() {
-		setErr = c.store.Set(key, entry)
-		if setErr == nil {
-			c.updateKeyCount()
-		}
-	})
+	c.mu.Lock()
+	setErr := c.store.Set(key, entry)
+	if setErr == nil {
+		c.updateKeyCount()
+	}
+	c.mu.Unlock()
 
 	return setErr
 }
@@ -276,41 +265,39 @@ func (c *Cache) Put(key string, value any) error {
 
 // Delete removes a key from the cache
 func (c *Cache) Delete(key string) error {
-	var err error
 	ctx := context.Background()
 
-	c.lock(func() {
-		err = c.store.Delete(key)
-		if err == nil {
-			c.stats.incInvalidations()
-			c.updateKeyCount()
-			if c.hooks != nil {
-				c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
-			}
+	c.mu.Lock()
+	err := c.store.Delete(key)
+	if err == nil {
+		c.stats.incInvalidations()
+		c.updateKeyCount()
+		if c.hooks != nil {
+			c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
 		}
-	})
+	}
+	c.mu.Unlock()
 
 	return err
 }
 
 // Clear removes all entries from the cache
 func (c *Cache) Clear() error {
-	var err error
 	ctx := context.Background()
 
-	c.lock(func() {
-		keys := c.store.Keys()
-		err = c.store.Clear()
-		if err == nil {
-			for _, key := range keys {
-				c.stats.incInvalidations()
-				if c.hooks != nil {
-					c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
-				}
+	c.mu.Lock()
+	keys := c.store.Keys()
+	err := c.store.Clear()
+	if err == nil {
+		for _, key := range keys {
+			c.stats.incInvalidations()
+			if c.hooks != nil {
+				c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
 			}
-			c.updateKeyCount()
 		}
-	})
+		c.updateKeyCount()
+	}
+	c.mu.Unlock()
 
 	return err
 }
@@ -323,71 +310,65 @@ func (c *Cache) Stats() *Stats {
 
 // Keys returns all current cache keys
 func (c *Cache) Keys() []string {
-	var keys []string
-	c.rlock(func() {
-		keys = c.store.Keys()
-	})
+	c.mu.RLock()
+	keys := c.store.Keys()
+	c.mu.RUnlock()
 	return keys
 }
 
 // Len returns the current number of entries in the cache
 func (c *Cache) Len() int {
-	var length int
-	c.rlock(func() {
-		length = c.store.Len()
-	})
+	c.mu.RLock()
+	length := c.store.Len()
+	c.mu.RUnlock()
 	return length
 }
 
 // Has checks if a key exists in the cache
 func (c *Cache) Has(key string) bool {
-	var exists bool
-	c.rlock(func() {
-		entry, found := c.store.Get(key)
-		exists = found && !entry.IsExpired()
-	})
+	c.mu.RLock()
+	entry, found := c.store.Get(key)
+	exists := found && !entry.IsExpired()
+	c.mu.RUnlock()
 	return exists
 }
 
 // TTL returns the remaining TTL for a key
 func (c *Cache) TTL(key string) (time.Duration, bool) {
-	var ttl time.Duration
-	var found bool
-	c.rlock(func() {
-		entry, ok := c.store.Get(key)
-		if ok && !entry.IsExpired() {
-			ttl = entry.TTL()
-			found = true
-		}
-	})
-	return ttl, found
+	c.mu.RLock()
+	entry, ok := c.store.Get(key)
+	c.mu.RUnlock()
+
+	if ok && !entry.IsExpired() {
+		return entry.TTL(), true
+	}
+	return 0, false
 }
 
 // Close closes the cache and cleans up resources
 func (c *Cache) Close() error {
-	var err error
-	c.lock(func() {
-		if c.metricsStop != nil {
-			close(c.metricsStop)
-			c.metricsWg.Wait()
-		}
-		if c.metricsExporter != nil {
-			_ = c.metricsExporter.Close() // Ignore error on shutdown
-		}
-		err = c.store.Close()
-	})
+	c.mu.Lock()
+	if c.metricsStop != nil {
+		close(c.metricsStop)
+		c.metricsWg.Wait()
+	}
+	if c.metricsExporter != nil {
+		_ = c.metricsExporter.Close() // Ignore error on shutdown
+	}
+	err := c.store.Close()
+	c.mu.Unlock()
 	return err
 }
 
 // Cleanup removes expired entries and returns count removed
 func (c *Cache) Cleanup() int {
+	c.mu.Lock()
 	var removed int
-	c.lock(func() {
-		if store, ok := c.store.(store.TTLStore); ok {
-			removed = store.Cleanup()
-			c.updateKeyCount()
-		}
-	})
+	if store, ok := c.store.(store.TTLStore); ok {
+		removed = store.Cleanup()
+		c.updateKeyCount()
+	}
+	c.mu.Unlock()
 	return removed
 }
 
