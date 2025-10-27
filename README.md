@@ -88,12 +88,33 @@ cache, _ := obcache.New(config)
 
 ```go
 config := obcache.NewRedisConfig("localhost:6379").
-    WithRedis(&obcache.RedisConfig{
-        KeyPrefix: "myapp:",
-    }).
     WithDefaultTTL(time.Hour)
 
+// Customize Redis key prefix
+config.Redis.KeyPrefix = "myapp:"
+
 cache, _ := obcache.New(config)
+```
+
+### Eviction Strategies
+
+```go
+import "github.com/vnykmshr/obcache-go/internal/eviction"
+
+// LRU (Least Recently Used) - Default
+config := obcache.NewDefaultConfig().
+    WithMaxEntries(1000).
+    WithEvictionType(eviction.LRU)
+
+// LFU (Least Frequently Used)
+config := obcache.NewDefaultConfig().
+    WithMaxEntries(1000).
+    WithEvictionType(eviction.LFU)
+
+// FIFO (First In, First Out)
+config := obcache.NewDefaultConfig().
+    WithMaxEntries(1000).
+    WithEvictionType(eviction.FIFO)
 ```
 
 ### Compression
@@ -110,20 +131,23 @@ config := obcache.NewDefaultConfig().
 ## Features
 
 - **Function wrapping** - Automatically cache expensive function calls
-- **TTL support** - Time-based expiration 
-- **LRU eviction** - Automatic cleanup of old entries
+- **TTL support** - Time-based expiration
+- **Multiple eviction strategies** - LRU, LFU, and FIFO support
 - **Thread safe** - Concurrent access support
 - **Redis backend** - Distributed caching
 - **Compression** - Automatic value compression (gzip/deflate)
+- **Prometheus metrics** - Built-in metrics exporter
 - **Statistics** - Hit rates, miss counts, etc.
-- **Hooks** - Event callbacks for cache operations
+- **Context-aware hooks** - Event callbacks for cache operations
 
 ## Examples
 
 See [examples/](examples/) for complete examples:
 - [Basic usage](examples/basic/main.go)
-- [Redis caching](examples/redis-cache/main.go) 
+- [Redis caching](examples/redis-cache/main.go)
 - [Compression](examples/compression/main.go)
+- [Prometheus metrics](examples/prometheus/main.go)
+- [Gin web server integration](examples/gin-web-server/main.go)
 
 ## License
 

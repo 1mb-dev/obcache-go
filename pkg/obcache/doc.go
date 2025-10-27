@@ -1,5 +1,5 @@
 // Package obcache provides a high-performance, thread-safe, in-memory cache with TTL support,
-// LRU eviction, function memoization, and advanced hook system for observability.
+// multiple eviction strategies (LRU/LFU/FIFO), function memoization, and hooks for observability.
 //
 // # Overview
 //
@@ -11,13 +11,13 @@
 //
 //   - Thread-safe concurrent access with minimal lock contention
 //   - Time-to-live (TTL) expiration with automatic cleanup
-//   - LRU (Least Recently Used) eviction when capacity limits are reached
+//   - Multiple eviction strategies: LRU, LFU, and FIFO
 //   - Function memoization with customizable key generation
-//   - Advanced hook system with priority-based and conditional execution
+//   - Context-aware hooks for monitoring cache operations
 //   - Built-in statistics and performance monitoring
 //   - Redis backend support for distributed caching
-//   - Compression support for large values
-//   - Prometheus and OpenTelemetry integration
+//   - Compression support for large values (gzip/deflate)
+//   - Prometheus metrics integration
 //   - Singleflight pattern to prevent cache stampedes
 //
 // # Basic Usage
@@ -72,43 +72,80 @@
 //	    WithMaxEntries(10000).
 //	    WithDefaultTTL(30*time.Minute).
 //	    WithCleanupInterval(5*time.Minute).
-//	    WithKeyGenFunc(obcache.SimpleKeyFunc)
+//	    WithEvictionType(eviction.LFU)  // Use LFU instead of default LRU
 //
 //	cache, err := obcache.New(config)
 //
-// # Advanced Hook System
+// # Eviction Strategies
 //
-// Monitor cache operations with priority-based and conditional hooks:
+// Choose the eviction strategy that best fits your use case:
+//
+//	import "github.com/vnykmshr/obcache-go/internal/eviction"
+//
+//	// LRU (Least Recently Used) - Default
+//	// Evicts items that haven't been accessed recently
+//	config := obcache.NewDefaultConfig().WithEvictionType(eviction.LRU)
+//
+//	// LFU (Least Frequently Used)
+//	// Evicts items with the lowest access count
+//	config := obcache.NewDefaultConfig().WithEvictionType(eviction.LFU)
+//
+//	// FIFO (First In, First Out)
+//	// Evicts oldest items regardless of access patterns
+//	config := obcache.NewDefaultConfig().WithEvictionType(eviction.FIFO)
+//
+// # Context-Aware Hooks
+//
+// Monitor cache operations with context-aware hooks:
 //
 //	hooks := &obcache.Hooks{}
 //
-//	// High priority: metrics collection (executes first)
-//	hooks.AddOnHitWithPriority(func(key string, value any) {
-//	    metrics.IncrementCounter("cache.hits")
-//	}, obcache.HookPriorityHigh)
-//
-//	// Low priority: logging (executes after metrics)
-//	hooks.AddOnHitWithPriority(func(key string, value any) {
+//	// Hook on cache hits
+//	hooks.AddOnHit(func(ctx context.Context, key string, value any) {
 //	    log.Printf("Cache hit: %s", key)
-//	}, obcache.HookPriorityLow)
+//	    metrics.IncrementCounter("cache.hits")
+//	})
 //
-//	// Conditional hook: only for specific key patterns
-//	hooks.AddOnMissCtxIf(func(ctx context.Context, key string, args []any) {
-//	    alerts.SendAlert("Critical cache miss: " + key)
-//	}, obcache.AndCondition(
-//	    obcache.KeyPrefixCondition("critical:"),
-//	    obcache.ContextValueCondition("env", "production"),
-//	))
+//	// Hook on cache misses
+//	hooks.AddOnMiss(func(ctx context.Context, key string) {
+//	    log.Printf("Cache miss: %s", key)
+//	    metrics.IncrementCounter("cache.misses")
+//	})
+//
+//	// Hook on evictions
+//	hooks.AddOnEvict(func(ctx context.Context, key string, value any, reason obcache.EvictReason) {
+//	    log.Printf("Evicted: %s (reason: %s)", key, reason)
+//	})
+//
+//	// Hook on manual invalidations
+//	hooks.AddOnInvalidate(func(ctx context.Context, key string) {
+//	    log.Printf("Invalidated: %s", key)
+//	})
 //
 //	cache, _ := obcache.New(obcache.NewDefaultConfig().WithHooks(hooks))
+//
+// # Context Propagation
+//
+// Use context-aware methods for timeouts and tracing:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+//	defer cancel()
+//
+//	// Set with context
+//	err := cache.SetContext(ctx, "key", "value", time.Hour)
+//
+//	// Get with context
+//	value, found := cache.GetContext(ctx, "key")
 //
 // # Redis Backend
 //
 // Use Redis for distributed caching:
 //
 //	config := obcache.NewRedisConfig("localhost:6379").
-//	    WithDefaultTTL(time.Hour).
-//	    WithHooks(observabilityHooks)
+//	    WithDefaultTTL(time.Hour)
+//
+//	// Customize Redis key prefix
+//	config.Redis.KeyPrefix = "myapp:"
 //
 //	cache, err := obcache.New(config)
 //	// All operations now use Redis instead of local memory
@@ -117,8 +154,14 @@
 //
 // Enable compression for large values:
 //
+//	import "github.com/vnykmshr/obcache-go/pkg/compression"
+//
 //	config := obcache.NewDefaultConfig().
-//	    WithCompression(obcache.CompressionGzip, 1024) // Compress values > 1KB
+//	    WithCompression(&compression.Config{
+//	        Enabled:   true,
+//	        Algorithm: compression.CompressorGzip,
+//	        MinSize:   1024, // Only compress values > 1KB
+//	    })
 //
 //	cache, err := obcache.New(config)
 //
@@ -126,16 +169,29 @@
 //
 // Export metrics to Prometheus:
 //
-//	import "github.com/vnykmshr/obcache-go/pkg/metrics"
+//	import (
+//	    "github.com/vnykmshr/obcache-go/pkg/metrics"
+//	    "github.com/prometheus/client_golang/prometheus"
+//	)
 //
-//	prometheusExporter := metrics.NewPrometheusExporter("my_app")
+//	// Create Prometheus exporter
+//	promConfig := &metrics.PrometheusConfig{
+//	    Registry: prometheus.DefaultRegisterer,
+//	}
+//	metricsConfig := metrics.NewDefaultConfig()
+//	exporter, _ := metrics.NewPrometheusExporter(metricsConfig, promConfig)
+//
+//	// Configure cache with metrics
 //	config := obcache.NewDefaultConfig().
-//	    WithMetricsExporter(prometheusExporter, map[string]string{
-//	        "service": "user-api",
-//	        "version": "1.0.0",
+//	    WithMetrics(&obcache.MetricsConfig{
+//	        Exporter:  exporter,
+//	        Enabled:   true,
+//	        CacheName: "user-cache",
 //	    })
 //
 //	cache, _ := obcache.New(config)
+//
+// You can also implement custom exporters by implementing the metrics.Exporter interface.
 //
 // # Performance Considerations
 //
@@ -145,6 +201,10 @@
 //   - Enable compression for large values to reduce memory usage
 //   - Use hooks judiciously to avoid performance overhead
 //   - Monitor hit rates and adjust cache policies accordingly
+//   - Choose eviction strategy based on access patterns:
+//     * LRU: Good for temporal locality (recently used data)
+//     * LFU: Good for frequency patterns (popular items)
+//     * FIFO: Simple, predictable, good for time-series data
 //
 // # Thread Safety
 //
@@ -169,15 +229,16 @@
 //   - Implement proper error handling for critical cache operations
 //   - Use hooks for observability and debugging, not business logic
 //   - Test cache behavior under various load conditions
+//   - Choose the right eviction strategy for your access patterns
 //
 // # Examples
 //
 // See the examples directory for complete, runnable examples including:
 //   - Basic cache usage patterns
-//   - Advanced hook configurations
 //   - Redis integration
-//   - Metrics collection
+//   - Prometheus metrics collection
 //   - Compression usage
+//   - Web framework integration (Gin)
 //
 // For more detailed documentation and examples, visit:
 // https://github.com/vnykmshr/obcache-go
