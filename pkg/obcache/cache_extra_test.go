@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const testValue1 = "value1"
+
 func TestCacheKeys(t *testing.T) {
 	cache, err := New(NewDefaultConfig())
 	if err != nil {
@@ -19,7 +21,7 @@ func TestCacheKeys(t *testing.T) {
 	}
 
 	// Add some entries
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", testValue1, time.Hour)
 	_ = cache.Set("key2", "value2", time.Hour)
 	_ = cache.Set("key3", "value3", time.Hour)
 
@@ -54,7 +56,7 @@ func TestCacheLen(t *testing.T) {
 	}
 
 	// Add some entries
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", testValue1, time.Hour)
 	if cache.Len() != 1 {
 		t.Fatalf("Expected length 1, got %d", cache.Len())
 	}
@@ -83,7 +85,7 @@ func TestCacheHas(t *testing.T) {
 	}
 
 	// Add an entry
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", testValue1, time.Hour)
 
 	if !cache.Has("key1") {
 		t.Fatal("Cache should have key1")
@@ -124,7 +126,7 @@ func TestCacheTTLMethod(t *testing.T) {
 	if !found {
 		t.Fatal("Should find existing key")
 	}
-	if value != "value1" {
+	if value != testValue1 {
 		t.Fatalf("Expected value1, got %v", value)
 	}
 
@@ -163,7 +165,7 @@ func TestCacheClear(t *testing.T) {
 	}
 
 	// Add multiple entries
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", testValue1, time.Hour)
 	_ = cache.Set("key2", "value2", time.Hour)
 	_ = cache.Set("key3", "value3", time.Hour)
 
@@ -192,7 +194,7 @@ func TestCacheClose(t *testing.T) {
 	}
 
 	// Add an entry
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", testValue1, time.Hour)
 
 	// Close should not error
 	_ = cache.Close() // Test cleanup
@@ -254,7 +256,7 @@ func TestCacheClearWithHooks(t *testing.T) {
 	}
 
 	// Add multiple entries
-	_ = cache.Set("key1", "value1", time.Hour)
+	_ = cache.Set("key1", testValue1, time.Hour)
 	_ = cache.Set("key2", "value2", time.Hour)
 
 	// Invalidate all should trigger hooks

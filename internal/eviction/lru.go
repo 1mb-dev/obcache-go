@@ -9,12 +9,11 @@ import (
 
 // LRUStrategy implements the LRU (Least Recently Used) eviction strategy
 type LRUStrategy struct {
-	cache          *lru.Cache[string, *entry.Entry]
-	capacity       int
-	mutex          sync.RWMutex
-	evictCallback  func(key string, value *entry.Entry)
-	evictedKey     string
-	evictedValue   *entry.Entry
+	cache        *lru.Cache[string, *entry.Entry]
+	capacity     int
+	mutex        sync.RWMutex
+	evictedKey   string
+	evictedValue *entry.Entry
 }
 
 // NewLRUStrategy creates a new LRU eviction strategy
