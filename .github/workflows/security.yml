@@ -61,7 +61,7 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Install Gosec
-      run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+      run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
     - name: Run Gosec Security Scanner
       run: gosec -no-fail -fmt sarif -out results.sarif ./...
