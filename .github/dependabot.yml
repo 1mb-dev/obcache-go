@@ -6,13 +6,12 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
+      timezone: "Asia/Kolkata"
     open-pull-requests-limit: 5
-    reviewers:
-      - "1mb-dev"
-    assignees:
-      - "1mb-dev"
+    labels:
+      - "dependencies"
     commit-message:
-      prefix: "deps"
+      prefix: "chore(deps)"
       include: "scope"
 
   - package-ecosystem: "github-actions"
@@ -21,8 +20,10 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-    open-pull-requests-limit: 5
-    reviewers:
-      - "1mb-dev"
-    assignees:
-      - "1mb-dev"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
