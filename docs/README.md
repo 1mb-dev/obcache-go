@@ -101,7 +101,7 @@ value, found := c.Get("key")
 With this:
 ```go
 // obcache-go
-import "github.com/vnykmshr/obcache-go/pkg/obcache"
+import "github.com/1mb-dev/obcache-go/pkg/obcache"
 cache, _ := obcache.New(obcache.NewDefaultConfig().WithDefaultTTL(5*time.Minute))
 cache.Set("key", "value", time.Hour)
 value, found := cache.Get("key")

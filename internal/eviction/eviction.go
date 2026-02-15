@@ -1,7 +1,7 @@
 package eviction
 
 import (
-	"github.com/vnykmshr/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/internal/entry"
 )
 
 // Strategy defines the interface for eviction strategies

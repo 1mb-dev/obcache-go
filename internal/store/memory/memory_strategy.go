@@ -4,9 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vnykmshr/obcache-go/internal/entry"
-	"github.com/vnykmshr/obcache-go/internal/eviction"
-	"github.com/vnykmshr/obcache-go/internal/store"
+	"github.com/1mb-dev/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/internal/eviction"
+	"github.com/1mb-dev/obcache-go/internal/store"
 )
 
 // StrategyStore implements an in-memory cache with pluggable eviction strategies

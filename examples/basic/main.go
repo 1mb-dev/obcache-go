@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vnykmshr/obcache-go/pkg/obcache"
+	"github.com/1mb-dev/obcache-go/pkg/obcache"
 )
 
 func main() {

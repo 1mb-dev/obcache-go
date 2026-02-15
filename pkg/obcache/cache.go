@@ -9,14 +9,14 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/vnykmshr/obcache-go/internal/entry"
-	"github.com/vnykmshr/obcache-go/internal/eviction"
-	"github.com/vnykmshr/obcache-go/internal/singleflight"
-	"github.com/vnykmshr/obcache-go/internal/store"
-	"github.com/vnykmshr/obcache-go/internal/store/memory"
-	redisstore "github.com/vnykmshr/obcache-go/internal/store/redis"
-	"github.com/vnykmshr/obcache-go/pkg/compression"
-	"github.com/vnykmshr/obcache-go/pkg/metrics"
+	"github.com/1mb-dev/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/internal/eviction"
+	"github.com/1mb-dev/obcache-go/internal/singleflight"
+	"github.com/1mb-dev/obcache-go/internal/store"
+	"github.com/1mb-dev/obcache-go/internal/store/memory"
+	redisstore "github.com/1mb-dev/obcache-go/internal/store/redis"
+	"github.com/1mb-dev/obcache-go/pkg/compression"
+	"github.com/1mb-dev/obcache-go/pkg/metrics"
 )
 
 func (c *Cache) hit(ctx context.Context, key string, value any) {

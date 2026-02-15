@@ -3,7 +3,7 @@ package eviction
 import (
 	"testing"
 
-	"github.com/vnykmshr/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/internal/entry"
 )
 
 // Helper function to create a test entry

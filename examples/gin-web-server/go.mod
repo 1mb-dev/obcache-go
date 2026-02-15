@@ -2,11 +2,11 @@ module gin-web-server-example
 
 go 1.23.0
 
-replace github.com/vnykmshr/obcache-go => ../..
+replace github.com/1mb-dev/obcache-go => ../..
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/vnykmshr/obcache-go v0.0.0-00010101000000-000000000000
+	github.com/1mb-dev/obcache-go v0.0.0-00010101000000-000000000000
 )
 
 require (

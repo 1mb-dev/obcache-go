@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vnykmshr/obcache-go/pkg/metrics"
+	"github.com/1mb-dev/obcache-go/pkg/metrics"
 )
 
 // MockExporter for testing metrics integration

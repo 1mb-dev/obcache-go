@@ -405,7 +405,7 @@ package main
 
 import (
     "time"
-    "github.com/vnykmshr/obcache-go/pkg/obcache"
+    "github.com/1mb-dev/obcache-go/pkg/obcache"
 )
 
 func main() {
@@ -516,7 +516,7 @@ func main() {
 
 ```go
 import (
-    "github.com/vnykmshr/obcache-go/pkg/metrics"
+    "github.com/1mb-dev/obcache-go/pkg/metrics"
     "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -834,10 +834,10 @@ Key takeaway: Caching is not just about storing values. A well-designed caching 
 
 ## Further Reading
 
-- [GoDoc API Reference](https://pkg.go.dev/github.com/vnykmshr/obcache-go)
-- [Example Applications](https://github.com/vnykmshr/obcache-go/tree/main/examples)
-- [Configuration Reference](https://github.com/vnykmshr/obcache-go/blob/main/docs/README.md)
-- [Source Code](https://github.com/vnykmshr/obcache-go)
+- [GoDoc API Reference](https://pkg.go.dev/github.com/1mb-dev/obcache-go)
+- [Example Applications](https://github.com/1mb-dev/obcache-go/tree/main/examples)
+- [Configuration Reference](https://github.com/1mb-dev/obcache-go/blob/main/docs/README.md)
+- [Source Code](https://github.com/1mb-dev/obcache-go)
 
 ---
 

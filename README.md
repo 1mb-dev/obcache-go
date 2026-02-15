@@ -2,19 +2,19 @@
 
 High-performance, thread-safe caching library for Go with automatic function wrapping and TTL support.
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/vnykmshr/obcache-go.svg)](https://pkg.go.dev/github.com/vnykmshr/obcache-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/vnykmshr/obcache-go)](https://goreportcard.com/report/github.com/vnykmshr/obcache-go)
-[![CI](https://github.com/vnykmshr/obcache-go/workflows/CI/badge.svg)](https://github.com/vnykmshr/obcache-go/actions/workflows/ci.yml)
-[![Security](https://github.com/vnykmshr/obcache-go/workflows/Security/badge.svg)](https://github.com/vnykmshr/obcache-go/actions/workflows/security.yml)
-[![codecov](https://codecov.io/gh/vnykmshr/obcache-go/branch/main/graph/badge.svg)](https://codecov.io/gh/vnykmshr/obcache-go)
-[![License](https://img.shields.io/github/license/vnykmshr/obcache-go.svg)](https://github.com/vnykmshr/obcache-go/blob/main/LICENSE)
-[![Release](https://img.shields.io/github/release/vnykmshr/obcache-go.svg)](https://github.com/vnykmshr/obcache-go/releases)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/vnykmshr/obcache-go)](https://github.com/vnykmshr/obcache-go/blob/main/go.mod)
+[![Go Reference](https://pkg.go.dev/badge/github.com/1mb-dev/obcache-go.svg)](https://pkg.go.dev/github.com/1mb-dev/obcache-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/1mb-dev/obcache-go)](https://goreportcard.com/report/github.com/1mb-dev/obcache-go)
+[![CI](https://github.com/1mb-dev/obcache-go/workflows/CI/badge.svg)](https://github.com/1mb-dev/obcache-go/actions/workflows/ci.yml)
+[![Security](https://github.com/1mb-dev/obcache-go/workflows/Security/badge.svg)](https://github.com/1mb-dev/obcache-go/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/1mb-dev/obcache-go/branch/main/graph/badge.svg)](https://codecov.io/gh/1mb-dev/obcache-go)
+[![License](https://img.shields.io/github/license/1mb-dev/obcache-go.svg)](https://github.com/1mb-dev/obcache-go/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/release/1mb-dev/obcache-go.svg)](https://github.com/1mb-dev/obcache-go/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/1mb-dev/obcache-go)](https://github.com/1mb-dev/obcache-go/blob/main/go.mod)
 
 ## Installation
 
 ```bash
-go get github.com/vnykmshr/obcache-go
+go get github.com/1mb-dev/obcache-go
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ package main
 import (
     "fmt"
     "time"
-    "github.com/vnykmshr/obcache-go/pkg/obcache"
+    "github.com/1mb-dev/obcache-go/pkg/obcache"
 )
 
 func expensiveFunction(id int) (string, error) {
@@ -99,7 +99,7 @@ cache, _ := obcache.New(config)
 ### Eviction Strategies
 
 ```go
-import "github.com/vnykmshr/obcache-go/internal/eviction"
+import "github.com/1mb-dev/obcache-go/internal/eviction"
 
 // LRU (Least Recently Used) - Default
 config := obcache.NewDefaultConfig().

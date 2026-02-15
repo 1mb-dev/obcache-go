@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/vnykmshr/obcache-go/pkg/obcache"
+	"github.com/1mb-dev/obcache-go/pkg/obcache"
 )
 
 // User represents a simple user struct

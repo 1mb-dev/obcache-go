@@ -1,4 +1,4 @@
-module github.com/vnykmshr/obcache-go
+module github.com/1mb-dev/obcache-go
 
 go 1.25.3
 

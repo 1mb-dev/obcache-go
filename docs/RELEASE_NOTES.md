@@ -50,7 +50,7 @@ package main
 import (
     "fmt"
     "time"
-    "github.com/vnykmshr/obcache-go/pkg/obcache"
+    "github.com/1mb-dev/obcache-go/pkg/obcache"
 )
 
 func expensiveFunction(id int) (string, error) {
@@ -77,7 +77,7 @@ func main() {
 ## 📦 **Installation**
 
 ```bash
-go get github.com/vnykmshr/obcache-go
+go get github.com/1mb-dev/obcache-go
 ```
 
 Requires Go 1.21+ for generics support.
@@ -135,7 +135,7 @@ import "github.com/patrickmn/go-cache"
 c := cache.New(5*time.Minute, 10*time.Minute)
 
 // After (obcache-go)  
-import "github.com/vnykmshr/obcache-go/pkg/obcache"
+import "github.com/1mb-dev/obcache-go/pkg/obcache"
 cache, _ := obcache.New(obcache.NewDefaultConfig())
 ```
 
@@ -151,8 +151,8 @@ cache, _ := obcache.New(obcache.NewDefaultConfig())
 
 - **Documentation**: [docs/README.md](docs/README.md)
 - **Examples**: [examples/](examples/)
-- **Go Reference**: https://pkg.go.dev/github.com/vnykmshr/obcache-go
-- **Issues**: https://github.com/vnykmshr/obcache-go/issues
+- **Go Reference**: https://pkg.go.dev/github.com/1mb-dev/obcache-go
+- **Issues**: https://github.com/1mb-dev/obcache-go/issues
 
 ## 🙏 **Acknowledgments**
 
@@ -163,7 +163,7 @@ This library was built with production use cases in mind, incorporating lessons 
 **Ready to supercharge your Go applications with intelligent caching?**
 
 ```bash
-go get github.com/vnykmshr/obcache-go
+go get github.com/1mb-dev/obcache-go
 ```
 
 Happy caching! 🚀

@@ -80,7 +80,7 @@
 //
 // Choose the eviction strategy that best fits your use case:
 //
-//	import "github.com/vnykmshr/obcache-go/internal/eviction"
+//	import "github.com/1mb-dev/obcache-go/internal/eviction"
 //
 //	// LRU (Least Recently Used) - Default
 //	// Evicts items that haven't been accessed recently
@@ -154,7 +154,7 @@
 //
 // Enable compression for large values:
 //
-//	import "github.com/vnykmshr/obcache-go/pkg/compression"
+//	import "github.com/1mb-dev/obcache-go/pkg/compression"
 //
 //	config := obcache.NewDefaultConfig().
 //	    WithCompression(&compression.Config{
@@ -170,7 +170,7 @@
 // Export metrics to Prometheus:
 //
 //	import (
-//	    "github.com/vnykmshr/obcache-go/pkg/metrics"
+//	    "github.com/1mb-dev/obcache-go/pkg/metrics"
 //	    "github.com/prometheus/client_golang/prometheus"
 //	)
 //
@@ -241,5 +241,5 @@
 //   - Web framework integration (Gin)
 //
 // For more detailed documentation and examples, visit:
-// https://github.com/vnykmshr/obcache-go
+// https://github.com/1mb-dev/obcache-go
 package obcache

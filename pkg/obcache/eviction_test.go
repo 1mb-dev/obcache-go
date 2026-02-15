@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vnykmshr/obcache-go/internal/eviction"
+	"github.com/1mb-dev/obcache-go/internal/eviction"
 )
 
 func TestEvictionStrategies(t *testing.T) {
