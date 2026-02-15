@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/1mb-dev/obcache-go/pkg/obcache"
+	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
 )
 
 // User represents a user profile

@@ -3,7 +3,7 @@ package eviction
 import (
 	"sync"
 
-	"github.com/1mb-dev/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/v2/internal/entry"
 )
 
 // FIFOStrategy implements the FIFO (First In, First Out) eviction strategy

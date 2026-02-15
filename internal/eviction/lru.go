@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/1mb-dev/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/v2/internal/entry"
 )
 
 // LRUStrategy implements the LRU (Least Recently Used) eviction strategy

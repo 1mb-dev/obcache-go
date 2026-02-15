@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/1mb-dev/obcache-go/internal/entry"
+	"github.com/1mb-dev/obcache-go/v2/internal/entry"
 )
 
 // TestRedisStoreBasicOperations tests basic Redis store operations using a mock

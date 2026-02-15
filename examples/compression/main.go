@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/1mb-dev/obcache-go/pkg/compression"
-	"github.com/1mb-dev/obcache-go/pkg/obcache"
+	"github.com/1mb-dev/obcache-go/v2/pkg/compression"
+	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
 )
 
 // User represents a sample data structure

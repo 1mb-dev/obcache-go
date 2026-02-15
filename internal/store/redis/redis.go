@@ -10,8 +10,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/1mb-dev/obcache-go/internal/entry"
-	"github.com/1mb-dev/obcache-go/internal/store"
+	"github.com/1mb-dev/obcache-go/v2/internal/entry"
+	"github.com/1mb-dev/obcache-go/v2/internal/store"
 )
 
 // Store implements a Redis-backed cache store
