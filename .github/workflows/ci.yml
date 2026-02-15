@@ -2,98 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
   pull_request:
-    branches: [ main, master ]
-
-permissions:
-  contents: read
+    branches: [main]
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.25']
-
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v6
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: ${{ matrix.go-version }}
-
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Download dependencies
-      run: go mod download
-
-    - name: Build
-      run: go build ./...
-
-    - name: Test
-      run: go test -v -race -coverprofile=coverage.out ./pkg/... ./internal/...
-
-    - name: Build examples
-      run: go build ./examples/...
-
-    - name: Check coverage threshold
-      run: |
-        coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-        echo "Coverage: $coverage%"
-        threshold=45.0
-        if (( $(echo "$coverage < $threshold" | bc -l) )); then
-          echo "❌ Coverage $coverage% is below threshold $threshold%"
-          exit 1
-        fi
-        echo "✅ Coverage $coverage% meets threshold $threshold%"
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v6
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.25'
-
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v9
-      with:
-        version: latest
-        args: --timeout=5m
-
-  benchmark:
-    name: Benchmark
-    runs-on: ubuntu-latest
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v6
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.25'
-
-    - name: Run benchmarks
-      run: go test -bench=. -benchmem ./...
+  ci:
+    uses: 1mb-dev/.github/.github/workflows/ci-go.yml@main
