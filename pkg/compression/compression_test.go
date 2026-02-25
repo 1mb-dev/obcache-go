@@ -359,9 +359,9 @@ func TestDecompressAndDeserialize(t *testing.T) {
 
 func TestRoundTrip(t *testing.T) {
 	type ComplexData struct {
-		ID      int               `json:"id"`
-		Name    string            `json:"name"`
-		Tags    []string          `json:"tags"`
+		ID       int               `json:"id"`
+		Name     string            `json:"name"`
+		Tags     []string          `json:"tags"`
 		Metadata map[string]string `json:"metadata"`
 	}
 

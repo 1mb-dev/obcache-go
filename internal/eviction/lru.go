@@ -3,8 +3,8 @@ package eviction
 import (
 	"sync"
 
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/1mb-dev/obcache-go/v2/internal/entry"
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 // LRUStrategy implements the LRU (Least Recently Used) eviction strategy

@@ -202,9 +202,9 @@
 //   - Use hooks judiciously to avoid performance overhead
 //   - Monitor hit rates and adjust cache policies accordingly
 //   - Choose eviction strategy based on access patterns:
-//     * LRU: Good for temporal locality (recently used data)
-//     * LFU: Good for frequency patterns (popular items)
-//     * FIFO: Simple, predictable, good for time-series data
+//   - LRU: Good for temporal locality (recently used data)
+//   - LFU: Good for frequency patterns (popular items)
+//   - FIFO: Simple, predictable, good for time-series data
 //
 // # Thread Safety
 //

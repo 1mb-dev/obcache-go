@@ -20,8 +20,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
+	"github.com/gin-gonic/gin"
 )
 
 // User represents a user profile

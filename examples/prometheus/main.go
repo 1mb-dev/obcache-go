@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
 )
 
 // Prometheus metrics
