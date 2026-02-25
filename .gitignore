@@ -53,6 +53,9 @@ profile.out
 # Log files
 *.log
 
+# Example binaries
+examples/*/basic
+
 # Project-specific
 todos/
 benchmark-results/
