@@ -11,6 +11,24 @@ High-performance, thread-safe caching library for Go with automatic function wra
 [![Release](https://img.shields.io/github/release/1mb-dev/obcache-go.svg)](https://github.com/1mb-dev/obcache-go/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/1mb-dev/obcache-go)](https://github.com/1mb-dev/obcache-go/blob/main/go.mod)
 
+## When to Use This
+
+Use obcache-go when you want to cache expensive function results with minimal boilerplate -- wrap the function, get caching for free.
+
+**Choose obcache-go over [patrickmn/go-cache](https://github.com/patrickmn/go-cache) when:**
+- You want automatic function wrapping (`obcache.Wrap`) instead of manual get/set/invalidate
+- You need multiple eviction strategies (LRU, LFU, FIFO) -- go-cache only does TTL expiration
+- You need a Redis backend for distributed caching alongside in-memory
+- You want built-in Prometheus metrics and compression
+
+**Choose patrickmn/go-cache instead when:**
+- You need a simple TTL cache with minimal API surface
+- You don't need function wrapping, eviction strategies, or Redis
+
+**Choose Redis directly when:**
+- All your caching is distributed and you don't need an in-memory layer
+- You need cache sharing across multiple services
+
 ## Installation
 
 ```bash
