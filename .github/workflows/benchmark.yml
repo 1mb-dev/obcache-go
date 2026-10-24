@@ -14,10 +14,11 @@ jobs:
     name: Benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.27"
+          check-latest: true
 
       - name: Run benchmarks
-        run: go test -bench=. -benchmem ./...
+        run: go test -run '^$' -bench=. -benchtime=1x -benchmem ./...

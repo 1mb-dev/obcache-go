@@ -10,13 +10,27 @@ if [ -e ".git/hooks/pre-commit" ]; then
 fi
 
 # Staged-secret scan.
-# The [ -n ] guard is load-bearing. BSD xargs runs its command once even on empty input,
-# so an empty staged list became `grep -lE pattern` with no file operands, which reads
-# stdin, hits EOF and exits 0 -- reported to the user as "secrets detected" on a commit
-# staging nothing. A scanner that cries wolf teaches --no-verify, which disarms it entirely.
 patterns="password\s*[=:]\s*['\"][^'\"]{8,}['\"]|secret\s*[=:]\s*['\"][^'\"]{16,}['\"]|token\s*[=:]\s*['\"][^'\"]{20,}['\"]"
-staged=$(git diff --cached --name-only --diff-filter=ACM)
-if [ -n "$staged" ] && echo "$staged" | xargs grep -lE "$patterns" 2>/dev/null; then
+# Scan only the lines this commit adds, with `${{ ... }}` expressions stripped. Grepping whole
+# staged files flagged `github-token: "${{ secrets.GITHUB_TOKEN }}"` -- a pre-existing line,
+# a reference not a value -- on any edit to that workflow. A scanner that cries wolf teaches
+# --no-verify, which disarms it entirely. gitleaks in CI is the authority; this is the fast
+# local net.
+# Added lines are read from hunk bodies only: matching `^+[^+]` to skip the `+++` header
+# also skips added content that begins with `+`. Stripping the expression, not dropping its
+# line, keeps a literal on the same line in scope. --diff-filter=ACMR: deletions aren't scanned.
+# -z: without it non-ASCII paths come back quoted and match nothing. A rename is diffed with
+# both paths so only its added lines are read; the new path alone reads as a whole new file.
+# `if`, not `case`: bash 3.2 (macOS /bin/bash) misparses a case pattern's `)` inside $( ).
+hits=$(git diff --cached --name-status -z --diff-filter=ACMR |
+    while IFS= read -r -d '' st && IFS= read -r -d '' f; do
+        paths=("$f")
+        if [[ $st == R* ]]; then IFS= read -r -d '' f; paths+=("$f"); fi
+        git diff --cached -U0 -M -- "${paths[@]}" | awk '/^@@/ { body = 1; next } body && /^\+/' |
+            sed 's/\${{[^}]*}}//g' | grep -qE "$patterns" && echo "$f"
+    done)
+if [ -n "$hits" ]; then
+    echo "$hits"
     echo "Potential secrets detected in commit"
     echo "Review files and remove sensitive data"
     exit 1
