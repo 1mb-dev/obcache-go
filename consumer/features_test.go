@@ -192,10 +192,37 @@ func TestFeaturePrometheusMetrics(t *testing.T) {
 	for range 10 {
 		c.Get("k")
 	}
-	time.Sleep(20 * time.Millisecond)
-	if got := counter(t, reg, "obcache_hits_total"); got != 10 {
-		t.Errorf("obcache_hits_total = %v after 10 hits", got)
+	// The reporter runs on its own schedule, so wait for it rather than guess.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := exportedHits(t, reg)
+		if got == 10 {
+			break
+		}
+		if got > 10 || time.Now().After(deadline) {
+			t.Fatalf("obcache_hits_total = %v after 10 hits", got)
+		}
+		time.Sleep(time.Millisecond)
 	}
+	// A later export must not add the total again.
+	time.Sleep(5 * time.Millisecond)
+	if got := exportedHits(t, reg); got != 10 {
+		t.Errorf("obcache_hits_total = %v after further reports", got)
+	}
+}
+
+func exportedHits(t *testing.T, reg *prometheus.Registry) float64 {
+	t.Helper()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() == "obcache_hits_total" {
+			return f.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	return 0 // not reported yet
 }
 
 func TestFeatureStatistics(t *testing.T) {
