@@ -17,3 +17,35 @@ permissions:
 jobs:
   ci:
     uses: 1mb-dev/.github/.github/workflows/ci-go.yml@main
+
+  # The shared workflow's go test ./... stops at nested modules. This job is the
+  # only place Redis runs, against miniredis and a real server.
+  consumer:
+    name: Consumer (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.26", "1.27"]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+          cache-dependency-path: consumer/go.sum
+      - name: Test from outside the module
+        working-directory: consumer
+        env:
+          OBCACHE_TEST_REDIS: localhost:6379
+        run: go test -race -timeout 120s ./...
