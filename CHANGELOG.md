@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-11-02
+
+Docs only. The README installed the module root, which holds no package, so `go run` stopped on missing go.sum entries. It now installs `pkg/obcache`, and the Prometheus section installs `pkg/metrics`.
+
 ## [2.1.0] - 2026-11-02
 
-Install with `go get github.com/1mb-dev/obcache-go/v2`. Upgrading from 2.0.x: read Behavior Changes first.
+Upgrading from 2.0.x: read Behavior Changes first.
 
 ### Security
 
