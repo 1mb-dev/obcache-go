@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - Redis with compression now hits: entries record their format, and an entry that cannot be read is a miss rather than a wrong value
 - A compression config with `Level` unset now compresses; level 0 used to store the value uncompressed, larger than plain
 - Decompression is limited to `compression.MaxDecompressedSize`, so a small entry in a shared Redis cannot exhaust memory
+- Prometheus counters report true totals; each export used to add the running total again, so counters grew with every reporting interval
 
 ### Security
 
@@ -33,6 +34,7 @@ All notable changes to this project will be documented in this file.
 ### Deprecated
 
 - `SimpleKeyFunc` is not injective; use `DefaultKeyFunc`
+- `metrics.WithKeyValueSizes`, `IncludeKeyValueSizes`, `SizeBuckets` and the `CacheOperationsTotal`, `CacheErrorsTotal`, `CacheKeySize` and `CacheValueSize` names: these metrics were registered but never written, and are no longer registered
 
 ### Added
 
@@ -48,6 +50,8 @@ All notable changes to this project will be documented in this file.
 - On Redis or with compression, `Wrap` panics at startup on return types that cannot round-trip through JSON, and on `WithErrorCaching`. On Redis it also needs `WithName` or `WithKeyFunc`. Each message names the fix
 - `New` returns an error for a Redis config with neither `Addr` nor `Client`; it used to dial localhost. `NewRedisConfig(addr).WithRedis(...)` hits this, because `WithRedis` replaces the config
 - `DebugHandler` no longer serves keys or values by default, because it has no authentication; `WithDebugValues` restores them
+- Importing `pkg/obcache` no longer links the Prometheus client; `pkg/metrics` keeps the exporter, with the same exported API. `%T` and `reflect.PkgPath` of the shared metric types now show `internal/metricsapi`
+- Prometheus: `obcache_evictions_total` uses `reason="unspecified"`, because exported totals do not separate capacity from TTL evictions
 
 ## [2.0.0] - 2025-10-27
 

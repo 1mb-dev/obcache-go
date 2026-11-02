@@ -2,11 +2,16 @@ package metrics
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+// evictionReasonUnspecified labels evictions from Stats, which counts them as one
+// total across capacity and TTL.
+const evictionReasonUnspecified = "unspecified"
 
 // PrometheusExporter implements the Exporter interface for Prometheus metrics
 type PrometheusExporter struct {
@@ -18,13 +23,9 @@ type PrometheusExporter struct {
 	missesTotal        *prometheus.CounterVec
 	evictionsTotal     *prometheus.CounterVec
 	invalidationsTotal *prometheus.CounterVec
-	operationsTotal    *prometheus.CounterVec
-	errorsTotal        *prometheus.CounterVec
 
 	// Histograms
 	operationDuration *prometheus.HistogramVec
-	keySize           *prometheus.HistogramVec
-	valueSize         *prometheus.HistogramVec
 
 	// Gauges
 	keysCount        *prometheus.GaugeVec
@@ -36,6 +37,35 @@ type PrometheusExporter struct {
 	customHistograms map[string]*prometheus.HistogramVec
 	customGauges     map[string]*prometheus.GaugeVec
 	mu               sync.RWMutex
+
+	// Stats hands over running totals and Prometheus counters only add, so each
+	// export adds the change since the last one, tracked per source.
+	exported   map[any]*exportedTotals
+	exportedMu sync.Mutex
+}
+
+type exportedTotals struct {
+	hits, misses, invalidations, evictions int64
+}
+
+// sourceKey identifies where totals came from. Caches sharing a cache_name must each
+// keep their own last-seen totals, or their exports overwrite each other. Only a
+// pointer is a stable identity: a Stats passed by value is a new snapshot each time,
+// so it falls back to cache_name.
+func sourceKey(stats Stats, cacheName string) any {
+	if t := reflect.TypeOf(stats); t != nil && t.Kind() == reflect.Pointer {
+		return stats
+	}
+	return cacheName
+}
+
+// delta is what a counter gains. A total that went down means the source reset, so
+// everything it reports now is new.
+func delta(now, last int64) float64 {
+	if now < last {
+		return float64(now)
+	}
+	return float64(now - last)
 }
 
 // PrometheusConfig holds Prometheus-specific configuration
@@ -48,7 +78,9 @@ type PrometheusConfig struct {
 
 	// Buckets for histogram metrics
 	DurationBuckets []float64
-	SizeBuckets     []float64
+
+	// Deprecated: has no effect; no size metrics are exported.
+	SizeBuckets []float64
 }
 
 // NewPrometheusExporter creates a new Prometheus metrics exporter
@@ -72,11 +104,6 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 		durationBuckets = []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
 	}
 
-	sizeBuckets := promConfig.SizeBuckets
-	if sizeBuckets == nil {
-		sizeBuckets = []float64{64, 256, 1024, 4096, 16384, 65536, 262144, 1048576}
-	}
-
 	// Convert config labels to prometheus labels
 	var defaultLabels prometheus.Labels
 	if promConfig.DefaultLabels != nil {
@@ -96,10 +123,11 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 		customCounters:   make(map[string]*prometheus.CounterVec),
 		customHistograms: make(map[string]*prometheus.HistogramVec),
 		customGauges:     make(map[string]*prometheus.GaugeVec),
+		exported:         make(map[any]*exportedTotals),
 	}
 
 	// Create standard metrics
-	if err := exporter.createStandardMetrics(defaultLabels, durationBuckets, sizeBuckets); err != nil {
+	if err := exporter.createStandardMetrics(defaultLabels, durationBuckets); err != nil {
 		return nil, fmt.Errorf("failed to create standard metrics: %w", err)
 	}
 
@@ -107,7 +135,7 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 }
 
 // createStandardMetrics creates all the standard cache metrics
-func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labels, durationBuckets, sizeBuckets []float64) error {
+func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labels, durationBuckets []float64) error {
 	var err error
 
 	// Use a consistent set of base labels for all metrics
@@ -124,7 +152,7 @@ func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labe
 		return err
 	}
 
-	p.evictionsTotal, err = p.createCounterVec(p.config.MetricNames.CacheEvictionsTotal, "Total number of cache evictions", append(baseLabels, "reason"), defaultLabels)
+	p.evictionsTotal, err = p.createCounterVec(p.config.MetricNames.CacheEvictionsTotal, "Total number of cache evictions. Stats totals carry no reason, so reason is unspecified", append(baseLabels, "reason"), defaultLabels)
 	if err != nil {
 		return err
 	}
@@ -134,31 +162,9 @@ func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labe
 		return err
 	}
 
-	p.operationsTotal, err = p.createCounterVec(p.config.MetricNames.CacheOperationsTotal, "Total number of cache operations", append(baseLabels, "operation", "result"), defaultLabels)
-	if err != nil {
-		return err
-	}
-
-	p.errorsTotal, err = p.createCounterVec(p.config.MetricNames.CacheErrorsTotal, "Total number of cache errors", append(baseLabels, "operation"), defaultLabels)
-	if err != nil {
-		return err
-	}
-
 	// Histograms
 	if p.config.IncludeDetailedTimings {
 		p.operationDuration, err = p.createHistogramVec(p.config.MetricNames.CacheOperationDuration, "Cache operation duration in seconds", append(baseLabels, "operation"), defaultLabels, durationBuckets)
-		if err != nil {
-			return err
-		}
-	}
-
-	if p.config.IncludeKeyValueSizes {
-		p.keySize, err = p.createHistogramVec(p.config.MetricNames.CacheKeySize, "Cache key size in bytes", baseLabels, defaultLabels, sizeBuckets)
-		if err != nil {
-			return err
-		}
-
-		p.valueSize, err = p.createHistogramVec(p.config.MetricNames.CacheValueSize, "Cache value size in bytes", baseLabels, defaultLabels, sizeBuckets)
 		if err != nil {
 			return err
 		}
@@ -191,18 +197,34 @@ func (p *PrometheusExporter) ExportStats(stats Stats, labels Labels) error {
 		baseLabels["cache_name"] = cacheName
 	}
 
+	now := exportedTotals{
+		hits:          stats.Hits(),
+		misses:        stats.Misses(),
+		invalidations: stats.Invalidations(),
+		evictions:     stats.Evictions(),
+	}
+	p.exportedMu.Lock()
+	defer p.exportedMu.Unlock()
+	key := sourceKey(stats, labels["cache_name"])
+	last := p.exported[key]
+	if last == nil {
+		last = &exportedTotals{}
+		p.exported[key] = last
+	}
+
 	// Update counters that only need cache_name
-	p.hitsTotal.With(baseLabels).Add(float64(stats.Hits()))
-	p.missesTotal.With(baseLabels).Add(float64(stats.Misses()))
-	p.invalidationsTotal.With(baseLabels).Add(float64(stats.Invalidations()))
+	p.hitsTotal.With(baseLabels).Add(delta(now.hits, last.hits))
+	p.missesTotal.With(baseLabels).Add(delta(now.misses, last.misses))
+	p.invalidationsTotal.With(baseLabels).Add(delta(now.invalidations, last.invalidations))
 
 	// For evictions, we need to add the reason label
 	evictionLabels := make(prometheus.Labels)
 	for k, v := range baseLabels {
 		evictionLabels[k] = v
 	}
-	evictionLabels["reason"] = "capacity" // Default reason for stats export
-	p.evictionsTotal.With(evictionLabels).Add(float64(stats.Evictions()))
+	evictionLabels["reason"] = evictionReasonUnspecified
+	p.evictionsTotal.With(evictionLabels).Add(delta(now.evictions, last.evictions))
+	*last = now
 
 	// Update gauges
 	p.keysCount.With(baseLabels).Set(float64(stats.KeyCount()))

@@ -12,12 +12,12 @@ import (
 
 	"github.com/1mb-dev/obcache-go/v2/internal/entry"
 	"github.com/1mb-dev/obcache-go/v2/internal/eviction"
+	metrics "github.com/1mb-dev/obcache-go/v2/internal/metricsapi"
 	"github.com/1mb-dev/obcache-go/v2/internal/singleflight"
 	"github.com/1mb-dev/obcache-go/v2/internal/store"
 	"github.com/1mb-dev/obcache-go/v2/internal/store/memory"
 	redisstore "github.com/1mb-dev/obcache-go/v2/internal/store/redis"
 	"github.com/1mb-dev/obcache-go/v2/pkg/compression"
-	"github.com/1mb-dev/obcache-go/v2/pkg/metrics"
 )
 
 func (c *Cache) hit(ctx context.Context, key string, value any) {

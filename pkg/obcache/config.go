@@ -6,8 +6,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/1mb-dev/obcache-go/v2/internal/eviction"
+	metrics "github.com/1mb-dev/obcache-go/v2/internal/metricsapi"
 	"github.com/1mb-dev/obcache-go/v2/pkg/compression"
-	"github.com/1mb-dev/obcache-go/v2/pkg/metrics"
 )
 
 // StoreType defines the type of backend store to use

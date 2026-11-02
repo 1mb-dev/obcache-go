@@ -457,8 +457,7 @@ func TestMetricsConfiguration(t *testing.T) {
 		WithNamespace("custom").
 		WithLabels(metrics.Labels{"env": "test"}).
 		WithReportingInterval(10 * time.Second).
-		WithDetailedTimings(true).
-		WithKeyValueSizes(true)
+		WithDetailedTimings(true)
 
 	if customConfig.Namespace != "custom" {
 		t.Errorf("Expected namespace 'custom', got '%s'", customConfig.Namespace)
@@ -471,9 +470,6 @@ func TestMetricsConfiguration(t *testing.T) {
 	}
 	if !customConfig.IncludeDetailedTimings {
 		t.Error("Expected detailed timings to be enabled")
-	}
-	if !customConfig.IncludeKeyValueSizes {
-		t.Error("Expected key/value sizes to be enabled")
 	}
 }
 
