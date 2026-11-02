@@ -322,3 +322,30 @@ func TestCancelledResultWithoutErrorIsNotCached(t *testing.T) {
 		t.Errorf("got %v, calls=%d: a cancelled result was served", got, calls.Load())
 	}
 }
+
+// Retrying behind a cancelled leader is still one call, so one miss.
+func TestRetryCountsOneMiss(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		w := obcache.Wrap(c, func(ctx context.Context, _ int) (string, error) {
+			select {
+			case <-time.After(100 * time.Millisecond):
+				return "v", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}, opts("retry")...)
+
+		leader, cancel := context.WithCancel(context.Background())
+		var wg sync.WaitGroup
+		wg.Go(func() { _, _ = w(leader, 1) })
+		time.Sleep(time.Millisecond)
+		wg.Go(func() { _, _ = w(context.Background(), 1) })
+		time.Sleep(time.Millisecond)
+		cancel()
+		wg.Wait()
+		if misses := c.Stats().Misses(); misses != 2 {
+			t.Errorf("misses = %d, want one per caller", misses)
+		}
+	})
+}
