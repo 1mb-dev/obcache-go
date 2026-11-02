@@ -156,6 +156,15 @@ func typeName(t reflect.Type) string {
 		return "[" + strconv.Itoa(t.Len()) + "]" + typeName(t.Elem())
 	case reflect.Map:
 		return "map[" + typeName(t.Key()) + "]" + typeName(t.Elem())
+	case reflect.Struct:
+		var b strings.Builder
+		b.WriteString("struct {")
+		for i := range t.NumField() {
+			f := t.Field(i)
+			b.WriteString(" " + f.Name + " " + typeName(f.Type) + ";")
+		}
+		b.WriteString(" }")
+		return b.String()
 	}
 	return t.String()
 }
