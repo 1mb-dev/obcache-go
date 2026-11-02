@@ -28,15 +28,19 @@ func TestFindingB4(t *testing.T) {
 		}
 		t.Run(b.name, func(t *testing.T) {
 			c := b.new(t)
-			small := obcache.Wrap(c, func(int) (int, error) { return 7, nil }, opts("small")...)
+			var calls atomic.Int32
+			small := obcache.Wrap(c, func(int) (int, error) { calls.Add(1); return 7, nil }, opts("small")...)
 			_, _ = small(1)
 			if hit, err := small(1); hit != 7 || err != nil {
 				t.Errorf("int hit = %d, %v", hit, err)
 			}
-			structured := obcache.Wrap(c, func(int) (User, error) { return User{ID: 1}, nil }, opts("struct")...)
+			structured := obcache.Wrap(c, func(int) (User, error) { calls.Add(1); return User{ID: 1}, nil }, opts("struct")...)
 			_, _ = structured(1)
 			if hit, err := structured(1); hit.ID != 1 || err != nil {
 				t.Errorf("struct hit = %+v, %v", hit, err)
+			}
+			if n := calls.Load(); n != 2 {
+				t.Errorf("underlying calls = %d, want one per function", n)
 			}
 		})
 	}
