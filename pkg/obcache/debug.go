@@ -59,6 +59,7 @@ func (c *Cache) DebugHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 
 		var response DebugResponse
+		c.updateKeyCount() // writes no longer maintain it
 		includeKeys := r.URL.Path == "/" || r.URL.Path == "/keys"
 
 		// Collect statistics
