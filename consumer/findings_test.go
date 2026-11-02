@@ -141,7 +141,6 @@ func TestFindingSH1(t *testing.T) {
 }
 
 func TestFindingH1(t *testing.T) {
-	suppress(t, "H1")
 	t.Run("OnHit-calls-Delete", func(t *testing.T) {
 		hooks := obcache.NewHooks()
 		var c *obcache.Cache
@@ -183,7 +182,6 @@ func TestFindingH1(t *testing.T) {
 }
 
 func TestFindingR1(t *testing.T) {
-	suppress(t, "R1")
 	cfg, mr := miniConfig(t)
 	c := memoryCache(t, cfg)
 	for i := range 100 {

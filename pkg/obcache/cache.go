@@ -40,7 +40,6 @@ type Cache struct {
 	stats  *Stats
 	hooks  *Hooks
 	sf     *singleflight.Group[string, any]
-	mu     sync.RWMutex
 
 	// Compression
 	compressor compression.Compressor
@@ -204,30 +203,20 @@ func (c *Cache) GetContext(ctx context.Context, key string) (any, bool) {
 		c.recordCacheOperation(metrics.OperationGet, time.Since(start))
 	}()
 
-	var result any
-	var found bool
-
-	c.mu.RLock()
 	entry, ok := c.store.Get(ctx, key)
 	if !ok {
-		c.mu.RUnlock()
 		c.miss(ctx, key)
-		return result, found
+		return nil, false
 	}
 
 	value, err := c.decompressValue(entry)
 	if err != nil {
-		c.mu.RUnlock()
 		c.miss(ctx, key)
-		return result, found
+		return nil, false
 	}
 
 	c.hit(ctx, key, value)
-	result = value
-	found = true
-	c.mu.RUnlock()
-
-	return result, found
+	return value, true
 }
 
 // Set stores a value in the cache with the specified key and TTL
@@ -253,14 +242,7 @@ func (c *Cache) SetContext(ctx context.Context, key string, value any, ttl time.
 		return fmt.Errorf("failed to create entry: %w", err)
 	}
 
-	c.mu.Lock()
-	setErr := c.store.Set(ctx, key, entry)
-	if setErr == nil {
-		c.updateKeyCount()
-	}
-	c.mu.Unlock()
-
-	return setErr
+	return c.store.Set(ctx, key, entry)
 }
 
 // Put stores a value using the default TTL
@@ -272,16 +254,13 @@ func (c *Cache) Put(key string, value any) error {
 func (c *Cache) Delete(key string) error {
 	ctx := context.Background()
 
-	c.mu.Lock()
 	err := c.store.Delete(key)
 	if err == nil {
 		c.stats.incInvalidations()
-		c.updateKeyCount()
 		if c.hooks != nil {
 			c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
 		}
 	}
-	c.mu.Unlock()
 
 	return err
 }
@@ -290,7 +269,6 @@ func (c *Cache) Delete(key string) error {
 func (c *Cache) Clear() error {
 	ctx := context.Background()
 
-	c.mu.Lock()
 	keys := c.store.Keys()
 	err := c.store.Clear()
 	if err == nil {
@@ -300,9 +278,7 @@ func (c *Cache) Clear() error {
 				c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
 			}
 		}
-		c.updateKeyCount()
 	}
-	c.mu.Unlock()
 
 	return err
 }
@@ -315,35 +291,23 @@ func (c *Cache) Stats() *Stats {
 
 // Keys returns all current cache keys
 func (c *Cache) Keys() []string {
-	c.mu.RLock()
-	keys := c.store.Keys()
-	c.mu.RUnlock()
-	return keys
+	return c.store.Keys()
 }
 
 // Len returns the current number of entries in the cache
 func (c *Cache) Len() int {
-	c.mu.RLock()
-	length := c.store.Len()
-	c.mu.RUnlock()
-	return length
+	return c.store.Len()
 }
 
 // Has checks if a key exists in the cache
 func (c *Cache) Has(key string) bool {
-	c.mu.RLock()
 	entry, found := c.store.Get(context.Background(), key)
-	exists := found && !entry.IsExpired()
-	c.mu.RUnlock()
-	return exists
+	return found && !entry.IsExpired()
 }
 
 // TTL returns the remaining TTL for a key
 func (c *Cache) TTL(key string) (time.Duration, bool) {
-	c.mu.RLock()
 	entry, ok := c.store.Get(context.Background(), key)
-	c.mu.RUnlock()
-
 	if ok && !entry.IsExpired() {
 		return entry.TTL(), true
 	}
@@ -352,7 +316,6 @@ func (c *Cache) TTL(key string) (time.Duration, bool) {
 
 // Close closes the cache and cleans up resources
 func (c *Cache) Close() error {
-	c.mu.Lock()
 	if c.metricsStop != nil {
 		close(c.metricsStop)
 		c.metricsWg.Wait()
@@ -360,21 +323,15 @@ func (c *Cache) Close() error {
 	if c.metricsExporter != nil {
 		_ = c.metricsExporter.Close() // Ignore error on shutdown
 	}
-	err := c.store.Close()
-	c.mu.Unlock()
-	return err
+	return c.store.Close()
 }
 
 // Cleanup removes expired entries and returns count removed
 func (c *Cache) Cleanup() int {
-	c.mu.Lock()
-	var removed int
 	if store, ok := c.store.(store.TTLStore); ok {
-		removed = store.Cleanup()
-		c.updateKeyCount()
+		return store.Cleanup()
 	}
-	c.mu.Unlock()
-	return removed
+	return 0
 }
 
 // updateKeyCount updates the key count statistic
@@ -564,6 +521,7 @@ func (c *Cache) metricsReporter() {
 
 // exportCurrentStats exports the current statistics to metrics
 func (c *Cache) exportCurrentStats() {
+	c.updateKeyCount()
 	if c.metricsExporter != nil {
 		_ = c.metricsExporter.ExportStats(c.stats, c.metricsLabels) //nolint:errcheck // Error handling done at higher level
 	}

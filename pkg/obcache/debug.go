@@ -80,7 +80,6 @@ func (c *Cache) DebugHandler() http.Handler {
 
 		// Collect keys if requested
 		if includeKeys {
-			c.mu.RLock()
 			keys := c.store.Keys()
 			response.Keys = make([]DebugKey, 0, len(keys))
 
@@ -106,7 +105,6 @@ func (c *Cache) DebugHandler() http.Handler {
 					response.Keys = append(response.Keys, debugKey)
 				}
 			}
-			c.mu.RUnlock()
 		}
 
 		// Write JSON response
