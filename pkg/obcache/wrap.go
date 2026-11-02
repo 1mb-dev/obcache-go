@@ -327,9 +327,25 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 			return createErrorReturn(fnType, err)
 		case f.leaderCtxDone && !leader && ctx.Err() == nil:
 			continue
+		case !leader && !fits(f.results, fnType):
+			// Another function's flight under the same key, possible with WithKeyFunc.
+			continue
 		}
 		return f.results
 	}
+}
+
+// fits reports whether shared results can be returned from a function of fnType.
+func fits(results []reflect.Value, fnType reflect.Type) bool {
+	if len(results) != fnType.NumOut() {
+		return false
+	}
+	for i, r := range results {
+		if !r.Type().AssignableTo(fnType.Out(i)) {
+			return false
+		}
+	}
+	return true
 }
 
 func call(fnValue reflect.Value, fnType reflect.Type, args []reflect.Value) []reflect.Value {

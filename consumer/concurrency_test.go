@@ -281,3 +281,25 @@ func TestFindingCTX1(t *testing.T) {
 		wg.Wait()
 	})
 }
+
+// WithKeyFunc can give two functions the same key. Sharing a flight must then fall
+// back to a call of its own, never hand over the other function's results.
+func TestSharedKeyAcrossFunctionTypes(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		same := obcache.WithKeyFunc(func(args []any) string { return "same" })
+		users := obcache.Wrap(c, func(int) (*User, error) {
+			time.Sleep(10 * time.Millisecond)
+			return &User{ID: 1}, nil
+		}, same)
+		names := obcache.Wrap(c, func(int) (*Inner, error) { return &Inner{Tags: []string{"x"}}, nil }, same)
+
+		var wg sync.WaitGroup
+		wg.Go(func() { _, _ = users(1) })
+		time.Sleep(time.Millisecond)
+		if got, err := names(1); err != nil || got == nil || len(got.Tags) != 1 {
+			t.Errorf("names = %+v, %v", got, err)
+		}
+		wg.Wait()
+	})
+}
