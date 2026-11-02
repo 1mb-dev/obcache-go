@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - Redis with compression now hits: entries record their format, and an entry that cannot be read is a miss rather than a wrong value
 - A compression config with `Level` unset now compresses; level 0 used to store the value uncompressed, larger than plain
 - Decompression is limited to `compression.MaxDecompressedSize`, so a small entry in a shared Redis cannot exhaust memory
+- Prometheus counters report true totals; each export used to add the running total again, so counters grew with every reporting interval
 
 ### Security
 

@@ -326,7 +326,6 @@ func TestFindingF6(t *testing.T) {
 }
 
 func TestFindingP1(t *testing.T) {
-	suppress(t, "P1")
 	c := memoryCache(t, obcache.NewDefaultConfig())
 	reg := prometheus.NewRegistry()
 	exporter, err := metrics.NewPrometheusExporter(metrics.NewDefaultConfig(), &metrics.PrometheusConfig{Registry: reg})
@@ -346,6 +345,74 @@ func TestFindingP1(t *testing.T) {
 	if got := counter(t, reg, "obcache_hits_total"); got != 10 {
 		t.Errorf("obcache_hits_total = %v after 10 hits", got)
 	}
+}
+
+type resettableStats struct {
+	metrics.NoOpExporter
+	hits int64
+}
+
+func (s *resettableStats) Hits() int64          { return s.hits }
+func (s *resettableStats) Misses() int64        { return 0 }
+func (s *resettableStats) Evictions() int64     { return 0 }
+func (s *resettableStats) Invalidations() int64 { return 0 }
+func (s *resettableStats) KeyCount() int64      { return 0 }
+func (s *resettableStats) InFlight() int64      { return 0 }
+func (s *resettableStats) HitRate() float64     { return 0 }
+
+func TestPrometheusCountersAcrossCaches(t *testing.T) {
+	newExporter := func(t *testing.T) (*metrics.PrometheusExporter, *prometheus.Registry) {
+		t.Helper()
+		reg := prometheus.NewRegistry()
+		exporter, err := metrics.NewPrometheusExporter(metrics.NewDefaultConfig(), &metrics.PrometheusConfig{Registry: reg})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return exporter, reg
+	}
+	hit := func(c *obcache.Cache, n int) {
+		_ = c.Set("k", "v", time.Hour)
+		for range n {
+			c.Get("k")
+		}
+	}
+
+	t.Run("one name sums", func(t *testing.T) {
+		exporter, reg := newExporter(t)
+		a, b := memoryCache(t, obcache.NewDefaultConfig()), memoryCache(t, obcache.NewDefaultConfig())
+		hit(a, 7)
+		hit(b, 7)
+		labels := metrics.Labels{"cache_name": "default"}
+		for range 3 {
+			_ = exporter.ExportStats(a.Stats(), labels)
+			_ = exporter.ExportStats(b.Stats(), labels)
+		}
+		if got := counter(t, reg, "obcache_hits_total"); got != 14 {
+			t.Errorf("obcache_hits_total = %v for 14 hits", got)
+		}
+	})
+	t.Run("two names stay apart", func(t *testing.T) {
+		exporter, reg := newExporter(t)
+		a, b := memoryCache(t, obcache.NewDefaultConfig()), memoryCache(t, obcache.NewDefaultConfig())
+		hit(a, 3)
+		hit(b, 4)
+		_ = exporter.ExportStats(a.Stats(), metrics.Labels{"cache_name": "a"})
+		_ = exporter.ExportStats(b.Stats(), metrics.Labels{"cache_name": "b"})
+		if got := counter(t, reg, "obcache_hits_total"); got != 7 {
+			t.Errorf("obcache_hits_total = %v for 7 hits", got)
+		}
+	})
+	t.Run("a reset does not lose counts", func(t *testing.T) {
+		exporter, reg := newExporter(t)
+		s := &resettableStats{hits: 10}
+		labels := metrics.Labels{"cache_name": "r"}
+		_ = exporter.ExportStats(s, labels)
+		s.hits = 3
+		_ = exporter.ExportStats(s, labels)
+		if got := counter(t, reg, "obcache_hits_total"); got != 13 {
+			t.Errorf("obcache_hits_total = %v, want 10 then 3 more after the reset", got)
+		}
+	})
 }
 
 func counter(t *testing.T, reg *prometheus.Registry, name string) float64 {

@@ -177,7 +177,6 @@ func TestFeatureCompression(t *testing.T) {
 }
 
 func TestFeaturePrometheusMetrics(t *testing.T) {
-	suppress(t, "P1")
 	reg := prometheus.NewRegistry()
 	exporter, err := metrics.NewPrometheusExporter(metrics.NewDefaultConfig(), &metrics.PrometheusConfig{Registry: reg})
 	if err != nil {

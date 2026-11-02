@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -36,6 +37,33 @@ type PrometheusExporter struct {
 	customHistograms map[string]*prometheus.HistogramVec
 	customGauges     map[string]*prometheus.GaugeVec
 	mu               sync.RWMutex
+
+	// Stats hands over running totals and Prometheus counters only add, so each
+	// export adds the change since the last one, tracked per source.
+	exported   map[any]*exportedTotals
+	exportedMu sync.Mutex
+}
+
+type exportedTotals struct {
+	hits, misses, invalidations, evictions int64
+}
+
+// sourceKey identifies where totals came from. Caches sharing a cache_name must each
+// keep their own last-seen totals, or their exports overwrite each other.
+func sourceKey(stats Stats, cacheName string) any {
+	if t := reflect.TypeOf(stats); t != nil && t.Comparable() {
+		return stats
+	}
+	return cacheName
+}
+
+// delta is what a counter gains. A total that went down means the source reset, so
+// everything it reports now is new.
+func delta(now, last int64) float64 {
+	if now < last {
+		return float64(now)
+	}
+	return float64(now - last)
 }
 
 // PrometheusConfig holds Prometheus-specific configuration
@@ -96,6 +124,7 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 		customCounters:   make(map[string]*prometheus.CounterVec),
 		customHistograms: make(map[string]*prometheus.HistogramVec),
 		customGauges:     make(map[string]*prometheus.GaugeVec),
+		exported:         make(map[any]*exportedTotals),
 	}
 
 	// Create standard metrics
@@ -191,10 +220,25 @@ func (p *PrometheusExporter) ExportStats(stats Stats, labels Labels) error {
 		baseLabels["cache_name"] = cacheName
 	}
 
+	now := exportedTotals{
+		hits:          stats.Hits(),
+		misses:        stats.Misses(),
+		invalidations: stats.Invalidations(),
+		evictions:     stats.Evictions(),
+	}
+	p.exportedMu.Lock()
+	defer p.exportedMu.Unlock()
+	key := sourceKey(stats, labels["cache_name"])
+	last := p.exported[key]
+	if last == nil {
+		last = &exportedTotals{}
+		p.exported[key] = last
+	}
+
 	// Update counters that only need cache_name
-	p.hitsTotal.With(baseLabels).Add(float64(stats.Hits()))
-	p.missesTotal.With(baseLabels).Add(float64(stats.Misses()))
-	p.invalidationsTotal.With(baseLabels).Add(float64(stats.Invalidations()))
+	p.hitsTotal.With(baseLabels).Add(delta(now.hits, last.hits))
+	p.missesTotal.With(baseLabels).Add(delta(now.misses, last.misses))
+	p.invalidationsTotal.With(baseLabels).Add(delta(now.invalidations, last.invalidations))
 
 	// For evictions, we need to add the reason label
 	evictionLabels := make(prometheus.Labels)
@@ -202,7 +246,8 @@ func (p *PrometheusExporter) ExportStats(stats Stats, labels Labels) error {
 		evictionLabels[k] = v
 	}
 	evictionLabels["reason"] = "capacity" // Default reason for stats export
-	p.evictionsTotal.With(evictionLabels).Add(float64(stats.Evictions()))
+	p.evictionsTotal.With(evictionLabels).Add(delta(now.evictions, last.evictions))
+	*last = now
 
 	// Update gauges
 	p.keysCount.With(baseLabels).Set(float64(stats.KeyCount()))
