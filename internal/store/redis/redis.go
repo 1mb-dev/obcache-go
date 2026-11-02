@@ -21,6 +21,7 @@ type Store struct {
 	evictCallback   store.EvictCallback
 	cleanupCallback store.EvictCallback
 	ctx             context.Context
+	closeClient     func() error
 }
 
 // Config holds Redis store configuration
@@ -36,6 +37,9 @@ type Config struct {
 
 	// Context for Redis operations
 	Context context.Context
+
+	// CloseClient releases a client the store owns. Nil for a caller's client.
+	CloseClient func() error
 }
 
 // SerializedEntry represents an entry as stored in Redis
@@ -63,10 +67,11 @@ func New(config *Config) (*Store, error) {
 	}
 
 	s := &Store{
-		client:     config.Client,
-		keyPrefix:  keyPrefix,
-		defaultTTL: config.DefaultTTL,
-		ctx:        ctx,
+		client:      config.Client,
+		keyPrefix:   keyPrefix,
+		defaultTTL:  config.DefaultTTL,
+		ctx:         ctx,
+		closeClient: config.CloseClient,
 	}
 
 	return s, nil
@@ -171,11 +176,12 @@ func (s *Store) Clear() error {
 	return nil
 }
 
-// Close closes the store and cleans up resources
+// Close releases a client the store owns. Entries stay: other instances share them.
 func (s *Store) Close() error {
-	// Redis client cleanup is handled externally
-	// We just clear our data
-	return s.Clear()
+	if s.closeClient != nil {
+		return s.closeClient()
+	}
+	return nil
 }
 
 // SetEvictCallback sets the callback for evictions (not applicable for Redis)

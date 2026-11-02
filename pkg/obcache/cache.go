@@ -198,6 +198,7 @@ func createRedisStore(config *Config) (store.Store, error) {
 		}
 
 		redisConfig.Client = client
+		redisConfig.CloseClient = client.Close
 	}
 
 	return redisstore.New(redisConfig)

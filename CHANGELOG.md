@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Default cache keys encode every argument in full: `time.Time` values, long slices, large maps and structs with many fields no longer share keys, and `[16]byte` arguments no longer panic
 - Wrapped functions no longer share entries by default: two functions on one cache could return each other's values, or panic on differing return types
 - `New` returns an error for an unknown eviction type instead of silently using LRU
+- Redis: `Close` no longer deletes shared entries, and it closes a client obcache built
 
 ### Security
 

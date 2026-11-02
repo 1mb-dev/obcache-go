@@ -257,7 +257,6 @@ func TestFindingR3(t *testing.T) {
 }
 
 func TestFindingF1(t *testing.T) {
-	suppress(t, "F1")
 	cfg, mr := miniConfig(t)
 	pod := memoryCache(t, cfg)
 	other := memoryCache(t, obcache.NewRedisConfigWithClient(redisClient(t, mr.Addr())))
