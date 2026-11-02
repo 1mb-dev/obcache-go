@@ -3,7 +3,6 @@
 Memoize any Go function in one line, with TTL, eviction and stampede protection.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/1mb-dev/obcache-go/v2/pkg/obcache.svg)](https://pkg.go.dev/github.com/1mb-dev/obcache-go/v2/pkg/obcache)
-[![Go Report Card](https://goreportcard.com/badge/github.com/1mb-dev/obcache-go/v2)](https://goreportcard.com/report/github.com/1mb-dev/obcache-go/v2)
 [![CI](https://github.com/1mb-dev/obcache-go/workflows/CI/badge.svg)](https://github.com/1mb-dev/obcache-go/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/1mb-dev/obcache-go.svg)](https://github.com/1mb-dev/obcache-go/blob/main/LICENSE)
 [![Release](https://img.shields.io/github/release/1mb-dev/obcache-go.svg)](https://github.com/1mb-dev/obcache-go/releases)
@@ -100,7 +99,7 @@ func main() {
 
 ### Redis
 
-On Redis, every `Wrap` needs `WithName` or `WithKeyFunc`, because the name is what processes share. A return type must survive JSON; see [Limits](#limits).
+On Redis, every `Wrap` needs `WithName` or `WithKeyFunc`, because the name is what processes share. A return type must survive JSON, and anyone who can write to your Redis can forge results; see [Limits](#limits).
 
 ```go
 package main
