@@ -235,6 +235,32 @@ func TestSlowOriginStillCached(t *testing.T) {
 	}
 }
 
+type codedError struct{}
+
+func (*codedError) Error() string { return "coded" }
+
+// ctx.Err() does not fit a *codedError result, so this waiter cannot leave early.
+func TestWaiterWithConcreteErrorTypeKeepsWaiting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		w := obcache.Wrap(c, func(context.Context, int) (string, *codedError) {
+			time.Sleep(time.Second)
+			return "v", nil
+		}, opts("coded")...)
+
+		var wg sync.WaitGroup
+		wg.Go(func() { _, _ = w(context.Background(), 1) })
+		time.Sleep(time.Millisecond)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		if v, err := w(ctx, 1); v != "v" || err != nil {
+			t.Errorf("waiter = %q, %v", v, err)
+		}
+		wg.Wait()
+	})
+}
+
 func TestFindingCTX1(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := bubbleCache(t)

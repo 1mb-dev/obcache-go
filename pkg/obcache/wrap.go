@@ -299,9 +299,11 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 		return flight{results: results}
 	}
 
+	// Reporting a wait timeout needs a result that can hold ctx.Err(). A function
+	// returning a concrete error type has none, so its waiters keep waiting.
 	waitCtx := ctx
-	if !hasErr {
-		waitCtx = context.Background() // no error slot to report a wait timeout through
+	if !hasErr || !errorType.AssignableTo(fnType.Out(fnType.NumOut()-1)) {
+		waitCtx = context.Background()
 	}
 
 	cache.stats.incInFlight()
