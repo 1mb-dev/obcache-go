@@ -650,3 +650,17 @@ func TestRefusedReturnLeavesNoName(t *testing.T) {
 		})
 	}
 }
+
+func TestHitWithoutHooksDoesNotBuildHookValue(t *testing.T) {
+	measure := func(hooks *obcache.Hooks) float64 {
+		c := memoryCache(t, obcache.NewDefaultConfig().WithHooks(hooks))
+		w := obcache.Wrap(c, func(int) (string, int, error) { return "a", 1, nil }, opts("multi")...)
+		_, _, _ = w(1)
+		return testing.AllocsPerRun(100, func() { _, _, _ = w(1) })
+	}
+	listening := obcache.NewHooks()
+	listening.AddOnHit(func(context.Context, string, any) {})
+	if quiet, loud := measure(obcache.NewHooks()), measure(listening); quiet >= loud {
+		t.Errorf("allocs per hit: %v without a hook, %v with one", quiet, loud)
+	}
+}

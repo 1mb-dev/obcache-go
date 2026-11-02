@@ -487,9 +487,13 @@ func (c *Cache) lookup(ctx context.Context, key string, fnType reflect.Type, has
 	}
 
 	// Hooks see what the caller is about to receive, in the form a miss stores.
-	hooked := e.Value
-	if _, isErr := e.Value.(cachedError); !isErr {
-		hooked = storedValue(results, valueCount(fnType))
+	// Building it allocates, so only when a hook will read it.
+	var hooked any
+	if c.hooks != nil && c.hooks.hasOnHit() {
+		hooked = e.Value
+		if _, isErr := e.Value.(cachedError); !isErr {
+			hooked = storedValue(results, valueCount(fnType))
+		}
 	}
 	c.hit(ctx, key, hooked)
 	return results, true
