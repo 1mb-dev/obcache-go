@@ -356,8 +356,7 @@ func TestValidateWrappableFunction(t *testing.T) {
 		desc string
 	}{
 		{"not a function", "non-function"},
-		{func() {}, "no return values"},
-		{func() (int, string) { return 1, "test" }, "multiple returns without error"},
+		{func(struct{ x int }) int { return 0 }, "parameter with an unexported field"},
 	}
 
 	for _, tc := range invalidCases {

@@ -532,29 +532,12 @@ func WrapFunc2WithError[T1, T2, R any](cache *Cache, fn func(T1, T2) (R, error),
 	return Wrap(cache, fn, options...)
 }
 
-// ValidateWrappableFunction checks if a function can be wrapped
-// This is useful for providing better error messages at runtime
-// It sees no cache, so it cannot report refusals that depend on the store
+// ValidateWrappableFunction reports what Wrap would refuse about fn with any store.
+// Refusals that depend on the store, such as return types on Redis, need a Cache.
 func ValidateWrappableFunction(fn any) error {
 	fnType := reflect.TypeOf(fn)
-
-	if fnType.Kind() != reflect.Func {
+	if fnType == nil || fnType.Kind() != reflect.Func {
 		return fmt.Errorf("not a function: %T", fn)
 	}
-
-	// Validate return types
-	numOut := fnType.NumOut()
-	if numOut == 0 {
-		return fmt.Errorf("functions with no return values cannot be cached")
-	}
-
-	// If there are multiple returns, the last one should be error
-	if numOut > 1 {
-		lastOut := fnType.Out(numOut - 1)
-		if !lastOut.Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-			return fmt.Errorf("multi-return functions must have error as the last return value")
-		}
-	}
-
-	return nil
+	return checkParams(fnType)
 }

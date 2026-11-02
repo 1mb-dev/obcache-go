@@ -152,6 +152,16 @@ func shapes() []shape {
 				t.Errorf("underlying calls = %d, want 1", got)
 			}
 		}},
+		{name: "no-results", run: func(t *testing.T, c *obcache.Cache, key string) {
+			var calls atomic.Int32
+			w := obcache.Wrap(c, func(int) { calls.Add(1) }, opts(key)...)
+			w(1)
+			w(1)
+			w(2)
+			if got := calls.Load(); got != 2 {
+				t.Errorf("underlying calls = %d, want one per key", got)
+			}
+		}},
 		{name: "error-only", run: func(t *testing.T, c *obcache.Cache, key string) {
 			var calls atomic.Int32
 			w := obcache.Wrap(c, func(int) error {

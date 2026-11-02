@@ -263,3 +263,34 @@ func TestDebugKeyCountIsCurrent(t *testing.T) {
 		t.Errorf("stats = %s", rec.Body.String())
 	}
 }
+
+// ValidateWrappableFunction must say what Wrap does.
+func TestValidateAgreesWithWrap(t *testing.T) {
+	c := memoryCache(t, obcache.NewDefaultConfig())
+	cases := []any{
+		func(int) {},
+		func(hiddenState) string { return "" },
+		func(int) (int, string) { return 0, "" },
+		func(int) (string, error) { return "", nil },
+	}
+	for i, fn := range cases {
+		validErr := obcache.ValidateWrappableFunction(fn)
+		var wrapPanic any
+		func() {
+			defer func() { wrapPanic = recover() }()
+			switch f := fn.(type) {
+			case func(int):
+				obcache.Wrap(c, f)
+			case func(hiddenState) string:
+				obcache.Wrap(c, f)
+			case func(int) (int, string):
+				obcache.Wrap(c, f)
+			case func(int) (string, error):
+				obcache.Wrap(c, f)
+			}
+		}()
+		if (validErr != nil) != (wrapPanic != nil) {
+			t.Errorf("case %d: Validate = %v, Wrap panic = %v", i, validErr, wrapPanic)
+		}
+	}
+}

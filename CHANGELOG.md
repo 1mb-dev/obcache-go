@@ -33,6 +33,10 @@ All notable changes to this project will be documented in this file.
 - `WithName` gives a wrapped function a stable identity, and `Cache.Key` returns the key its entry is stored under, for use with `Delete`
 - `EvictionLRU`, `EvictionLFU` and `EvictionFIFO` select an eviction strategy without importing an internal package
 
+### Changed
+
+- `ValidateWrappableFunction` now reports what `Wrap` refuses: it accepts functions with no results and multi-return functions without an error, and rejects parameter types the default key cannot encode
+
 ## [2.0.0] - 2025-10-27
 
 ### Major Simplification & Breaking Changes
