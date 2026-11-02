@@ -389,7 +389,7 @@ func TestEncodeArgsLargeValuesHash(t *testing.T) {
 // the encoding's own delimiters.
 func TestEncodeArgsIsInjective(t *testing.T) {
 	alphabet := []string{"a", "b", "|", ":", ",", ";", "s", "t", "i", "n", "(", ")", "[", "{", "1", "0", "6", "\x00"}
-	r := rand.New(rand.NewPCG(1, 2))
+	r := rand.New(rand.NewPCG(1, 2)) // #nosec G404 -- a fixed seed keeps failures reproducible
 	word := func() string {
 		var b strings.Builder
 		for range r.IntN(5) {
