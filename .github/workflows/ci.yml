@@ -44,6 +44,8 @@ jobs:
           go-version: ${{ matrix.go }}
           check-latest: true
           cache-dependency-path: consumer/go.sum
+      - name: Keep Prometheus out of pkg/obcache
+        run: "! go list -deps ./pkg/obcache | grep prometheus"
       - name: Test from outside the module
         working-directory: consumer
         env:

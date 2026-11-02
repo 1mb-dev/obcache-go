@@ -2,60 +2,57 @@ package metrics
 
 import (
 	"time"
+
+	"github.com/1mb-dev/obcache-go/v2/internal/metricsapi"
 )
 
-// Exporter defines the interface for cache metrics exporters
-// This abstraction allows supporting multiple observability systems
-type Exporter interface {
-	// ExportStats exports the current cache statistics
-	ExportStats(stats Stats, labels Labels) error
+// Exporter is the interface obcache reports metrics through. Implement:
+//
+//	ExportStats(stats Stats, labels Labels) error
+//	RecordCacheOperation(operation Operation, duration time.Duration, labels Labels) error
+//	IncrementCounter(name string, labels Labels) error
+//	RecordHistogram(name string, value float64, labels Labels) error
+//	SetGauge(name string, value float64, labels Labels) error
+//	Close() error
+//
+// The types below are aliases so that importing pkg/obcache does not link Prometheus.
+type Exporter = metricsapi.Exporter
 
-	// RecordCacheOperation records individual cache operations with timing
-	RecordCacheOperation(operation Operation, duration time.Duration, labels Labels) error
+// Labels are key-value pairs attached to metrics.
+type Labels = metricsapi.Labels
 
-	// IncrementCounter increments a named counter with labels
-	IncrementCounter(name string, labels Labels) error
+// Stats is the read-only view of cache statistics an Exporter receives:
+//
+//	Hits() int64
+//	Misses() int64
+//	Evictions() int64
+//	Invalidations() int64
+//	KeyCount() int64
+//	InFlight() int64
+//	HitRate() float64
+type Stats = metricsapi.Stats
 
-	// RecordHistogram records a value in a named histogram
-	RecordHistogram(name string, value float64, labels Labels) error
+// Operation names a cache operation.
+type Operation = metricsapi.Operation
 
-	// SetGauge sets a gauge value
-	SetGauge(name string, value float64, labels Labels) error
+// NoOpExporter discards all metrics. Embed it to implement part of Exporter.
+type NoOpExporter = metricsapi.NoOpExporter
 
-	// Close shuts down the exporter and flushes any pending metrics
-	Close() error
-}
-
-// Labels represents key-value pairs for metric labels/tags
-type Labels map[string]string
-
-// Stats interface defines the cache statistics that can be exported
-// This allows the metrics package to work with any stats implementation
-type Stats interface {
-	Hits() int64
-	Misses() int64
-	Evictions() int64
-	Invalidations() int64
-	KeyCount() int64
-	InFlight() int64
-	HitRate() float64
-}
-
-// Operation represents different cache operations for metrics
-type Operation string
-
+// Cache operations.
 const (
-	// Cache operations
-	OperationGet        Operation = "get"
-	OperationSet        Operation = "set"
-	OperationDelete     Operation = "delete"
-	OperationInvalidate Operation = "invalidate"
-	OperationEvict      Operation = "evict"
-	OperationCleanup    Operation = "cleanup"
-
-	// Function wrapping operations
-	OperationFunctionCall Operation = "function_call"
+	OperationGet          = metricsapi.OperationGet
+	OperationSet          = metricsapi.OperationSet
+	OperationDelete       = metricsapi.OperationDelete
+	OperationInvalidate   = metricsapi.OperationInvalidate
+	OperationEvict        = metricsapi.OperationEvict
+	OperationCleanup      = metricsapi.OperationCleanup
+	OperationFunctionCall = metricsapi.OperationFunctionCall
 )
+
+// NewNoOpExporter creates a no-op exporter.
+func NewNoOpExporter() *NoOpExporter {
+	return metricsapi.NewNoOpExporter()
+}
 
 // Result represents the result of a cache operation
 type Result string
@@ -245,32 +242,6 @@ func (m *MultiExporter) Close() error {
 	}
 	return nil
 }
-
-// NoOpExporter provides a no-op implementation for when metrics are disabled
-type NoOpExporter struct{}
-
-// NewNoOpExporter creates a no-op exporter
-func NewNoOpExporter() *NoOpExporter {
-	return &NoOpExporter{}
-}
-
-// ExportStats does nothing
-func (n *NoOpExporter) ExportStats(Stats, Labels) error { return nil }
-
-// RecordCacheOperation does nothing
-func (n *NoOpExporter) RecordCacheOperation(Operation, time.Duration, Labels) error { return nil }
-
-// IncrementCounter does nothing
-func (n *NoOpExporter) IncrementCounter(string, Labels) error { return nil }
-
-// RecordHistogram does nothing
-func (n *NoOpExporter) RecordHistogram(string, float64, Labels) error { return nil }
-
-// SetGauge does nothing
-func (n *NoOpExporter) SetGauge(string, float64, Labels) error { return nil }
-
-// Close does nothing
-func (n *NoOpExporter) Close() error { return nil }
 
 // Ensure interfaces are implemented
 var (

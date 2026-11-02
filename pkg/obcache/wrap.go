@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	metrics "github.com/1mb-dev/obcache-go/v2/internal/metricsapi"
 	"github.com/1mb-dev/obcache-go/v2/internal/singleflight"
-	"github.com/1mb-dev/obcache-go/v2/pkg/metrics"
 )
 
 // cachedError represents an error that has been cached

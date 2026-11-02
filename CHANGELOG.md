@@ -48,6 +48,7 @@ All notable changes to this project will be documented in this file.
 - On Redis or with compression, `Wrap` panics at startup on return types that cannot round-trip through JSON, and on `WithErrorCaching`. On Redis it also needs `WithName` or `WithKeyFunc`. Each message names the fix
 - `New` returns an error for a Redis config with neither `Addr` nor `Client`; it used to dial localhost. `NewRedisConfig(addr).WithRedis(...)` hits this, because `WithRedis` replaces the config
 - `DebugHandler` no longer serves keys or values by default, because it has no authentication; `WithDebugValues` restores them
+- Importing `pkg/obcache` no longer links the Prometheus client; `pkg/metrics` keeps the exporter, with the same exported API. `%T` and `reflect.PkgPath` of the shared metric types now show `internal/metricsapi`
 
 ## [2.0.0] - 2025-10-27
 
