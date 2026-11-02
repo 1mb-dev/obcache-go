@@ -49,9 +49,11 @@ type exportedTotals struct {
 }
 
 // sourceKey identifies where totals came from. Caches sharing a cache_name must each
-// keep their own last-seen totals, or their exports overwrite each other.
+// keep their own last-seen totals, or their exports overwrite each other. Only a
+// pointer is a stable identity: a Stats passed by value is a new snapshot each time,
+// so it falls back to cache_name.
 func sourceKey(stats Stats, cacheName string) any {
-	if t := reflect.TypeOf(stats); t != nil && t.Comparable() {
+	if t := reflect.TypeOf(stats); t != nil && t.Kind() == reflect.Pointer {
 		return stats
 	}
 	return cacheName

@@ -352,6 +352,16 @@ type resettableStats struct {
 	hits int64
 }
 
+type snapshotStats struct{ hits int64 }
+
+func (s snapshotStats) Hits() int64          { return s.hits }
+func (s snapshotStats) Misses() int64        { return 0 }
+func (s snapshotStats) Evictions() int64     { return 0 }
+func (s snapshotStats) Invalidations() int64 { return 0 }
+func (s snapshotStats) KeyCount() int64      { return 0 }
+func (s snapshotStats) InFlight() int64      { return 0 }
+func (s snapshotStats) HitRate() float64     { return 0 }
+
 func (s *resettableStats) Hits() int64          { return s.hits }
 func (s *resettableStats) Misses() int64        { return 0 }
 func (s *resettableStats) Evictions() int64     { return 0 }
@@ -400,6 +410,15 @@ func TestPrometheusCountersAcrossCaches(t *testing.T) {
 		_ = exporter.ExportStats(b.Stats(), metrics.Labels{"cache_name": "b"})
 		if got := counter(t, reg, "obcache_hits_total"); got != 7 {
 			t.Errorf("obcache_hits_total = %v for 7 hits", got)
+		}
+	})
+	t.Run("a value snapshot counts deltas", func(t *testing.T) {
+		exporter, reg := newExporter(t)
+		labels := metrics.Labels{"cache_name": "v"}
+		_ = exporter.ExportStats(snapshotStats{hits: 10}, labels)
+		_ = exporter.ExportStats(snapshotStats{hits: 12}, labels)
+		if got := counter(t, reg, "obcache_hits_total"); got != 12 {
+			t.Errorf("obcache_hits_total = %v for a total of 12", got)
 		}
 	})
 	t.Run("a reset does not lose counts", func(t *testing.T) {
