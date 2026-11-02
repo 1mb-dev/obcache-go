@@ -276,8 +276,12 @@ func implementsEither(t, iface reflect.Type) bool {
 	return t.Implements(iface) || reflect.PointerTo(t).Implements(iface)
 }
 
-// promotes reports whether a struct gets iface from an embedded field.
+// promotes reports whether a struct, or a pointer to one, gets iface from an
+// embedded field.
 func promotes(t, iface reflect.Type) bool {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
 	if t.Kind() != reflect.Struct {
 		return false
 	}

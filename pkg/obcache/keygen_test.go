@@ -307,12 +307,24 @@ type embeddedTime struct {
 
 func TestDefaultKeyFuncWalksPromotedMarshalers(t *testing.T) {
 	at := time.Unix(1000, 0)
-	a := DefaultKeyFunc([]any{embeddedTime{at, "alice"}})
-	b := DefaultKeyFunc([]any{embeddedTime{at, "bob"}})
-	if a == b {
-		t.Error("embedded time.Time hid the Tenant field from the key")
+	alice, bob := embeddedTime{at, "alice"}, embeddedTime{at, "bob"}
+	cases := map[string][2]any{
+		"value":              {alice, bob},
+		"pointer":            {&alice, &bob},
+		"slice of pointers":  {[]*embeddedTime{&alice}, []*embeddedTime{&bob}},
+		"pointer in any":     {any(&alice), any(&bob)},
+		"pointer to pointer": {ptrTo(&alice), ptrTo(&bob)},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			if DefaultKeyFunc([]any{args[0]}) == DefaultKeyFunc([]any{args[1]}) {
+				t.Error("embedded time.Time hid the Tenant field from the key")
+			}
+		})
 	}
 }
+
+func ptrTo[T any](v T) *T { return &v }
 
 type marshalerField struct {
 	M encoding.TextMarshaler
