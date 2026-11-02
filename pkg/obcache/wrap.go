@@ -295,6 +295,11 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 			}
 			return flight{results: results}
 		}
+		if !hasErr && ctx.Err() != nil {
+			// With no error to say so, a result computed under cancellation may be
+			// partial. It goes to the leader only.
+			return flight{results: results, leaderCtxDone: true}
+		}
 		store(storedValue(results, valueCount(fnType)), opts.TTL)
 		return flight{results: results}
 	}

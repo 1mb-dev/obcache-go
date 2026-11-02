@@ -303,3 +303,22 @@ func TestSharedKeyAcrossFunctionTypes(t *testing.T) {
 		wg.Wait()
 	})
 }
+
+func TestCancelledResultWithoutErrorIsNotCached(t *testing.T) {
+	c := memoryCache(t, obcache.NewDefaultConfig())
+	var calls atomic.Int32
+	w := obcache.Wrap(c, func(ctx context.Context, _ int) []string {
+		calls.Add(1)
+		if ctx.Err() != nil {
+			return nil // a partial answer, indistinguishable from a real one
+		}
+		return []string{"full"}
+	}, opts("partial")...)
+
+	dead, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = w(dead, 1)
+	if got := w(context.Background(), 1); len(got) != 1 || calls.Load() != 2 {
+		t.Errorf("got %v, calls=%d: a cancelled result was served", got, calls.Load())
+	}
+}
