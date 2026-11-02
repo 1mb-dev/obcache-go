@@ -190,7 +190,7 @@ func (c *Cache) identity(fnValue reflect.Value, fnType reflect.Type, opts *WrapO
 			return "", nil
 		}
 		if c.config.StoreType == StoreTypeRedis {
-			return "", errors.New("Redis needs a stable function name: add WithName or WithKeyFunc")
+			return "", errors.New("a Redis cache needs a stable function name: add WithName or WithKeyFunc")
 		}
 		if !isTopLevel(fnName) {
 			return fmt.Sprintf("#%d", c.wrapSeq.Add(1)), nil
@@ -480,7 +480,7 @@ func (c *Cache) lookup(ctx context.Context, key string, fnType reflect.Type, has
 	}
 
 	// Hooks see what the caller is about to receive, in the form a miss stores.
-	var hooked any = e.Value
+	hooked := e.Value
 	if _, isErr := e.Value.(cachedError); !isErr {
 		hooked = storedValue(results, valueCount(fnType))
 	}

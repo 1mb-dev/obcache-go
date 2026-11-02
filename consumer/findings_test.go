@@ -512,7 +512,12 @@ func TestDefaultPrefixIgnoresOldEntries(t *testing.T) {
 	}
 }
 
-type withPrivate struct{ id int }
+type withPrivate struct {
+	ID int
+	id int
+}
+
+var _ = withPrivate{id: 0}
 
 type withDash struct {
 	Secret string `json:"-"`
@@ -599,7 +604,7 @@ func TestFindingD1(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
 			t.Fatal(err)

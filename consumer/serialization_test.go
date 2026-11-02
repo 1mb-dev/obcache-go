@@ -19,6 +19,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 )
 
+const fresh = "fresh"
+
 const stamp = `"created_at":"2026-01-01T00:00:00Z","last_access":"2026-01-01T00:00:00Z"`
 
 func gzipBase64(t *testing.T, payload []byte) string {
@@ -39,7 +41,7 @@ func gzipBase64(t *testing.T, payload []byte) string {
 func TestGoldenV2Entries(t *testing.T) {
 	fixtures := map[string]string{
 		"cached error": `{"value":{"Err":{}},` + stamp + `}`,
-		"null":         `{"value":null,` + stamp + `}`,
+		"null value":   `{"value":null,` + stamp + `}`,
 		"gzip base64":  `{"value":"` + gzipBase64(t, []byte(`{"ID":1}`)) + `",` + stamp + `}`,
 		"plain value":  `{"value":{"ID":1},` + stamp + `}`,
 	}
@@ -62,7 +64,7 @@ func TestGoldenV2Entries(t *testing.T) {
 			var calls atomic.Int32
 			w := obcache.Wrap(c, func(int) (Inner, error) {
 				calls.Add(1)
-				return Inner{Tags: []string{"fresh"}}, nil
+				return Inner{Tags: []string{fresh}}, nil
 			}, obcache.WithKeyFunc(func([]any) string { return "k" }))
 			got, err := w(1)
 			if err != nil || len(got.Tags) != 1 || calls.Load() != 1 {
@@ -74,9 +76,9 @@ func TestGoldenV2Entries(t *testing.T) {
 
 func TestFindingDM1(t *testing.T) {
 	cases := map[string]string{
-		"wrong type":    `"a string"`,
-		"unknown field": `{"ID":1,"Gone":true}`,
-		"null":          `null`,
+		"wrong type":        `"a string"`,
+		"unknown field":     `{"ID":1,"Gone":true}`,
+		"null for a struct": `null`,
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -157,12 +159,11 @@ func TestDecompressionIsBounded(t *testing.T) {
 	cfg, mr := miniConfig(t)
 	c := memoryCache(t, cfg.WithCompression(readmeCompression(compression.CompressorGzip)))
 	var calls atomic.Int32
-	w := obcache.Wrap(c, func(int) (string, error) { calls.Add(1); return "fresh", nil }, opts("bomb")...)
+	w := obcache.Wrap(c, func(int) (string, error) { calls.Add(1); return fresh, nil }, opts("bomb")...)
 
 	// Valid JSON once expanded, so only the size limit can refuse it.
 	payload := append(append([]byte{'"'}, bytes.Repeat([]byte{'0'}, compression.MaxDecompressedSize+1024)...), '"')
 	encoded := `{"value":"` + gzipBase64(t, payload) + `",` + stamp + `,"format":"gzip"}`
-	payload = nil
 	if err := mr.Set("obcache2:"+c.Key("bomb", 1), encoded); err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +176,7 @@ func TestDecompressionIsBounded(t *testing.T) {
 	got, err := w(1)
 	runtime.ReadMemStats(&after)
 
-	if got != "fresh" || err != nil || calls.Load() != 1 {
+	if got != fresh || err != nil || calls.Load() != 1 {
 		t.Errorf("got %d bytes, %v, calls=%d", len(got), err, calls.Load())
 	}
 	if failures := c.Stats().DecodeFailures(); failures != 1 {
