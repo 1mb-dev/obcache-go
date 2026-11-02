@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2.1.0] - 2026-11-02
 
-Every advertised feature now works from an outside module. `go get github.com/1mb-dev/obcache-go/v2` is the install path.
+Install with `go get github.com/1mb-dev/obcache-go/v2`. Upgrading from 2.0.x: read Behavior Changes first.
 
 ### Security
 
