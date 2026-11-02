@@ -349,3 +349,34 @@ func TestRetryCountsOneMiss(t *testing.T) {
 		}
 	})
 }
+
+// A retry that finds an entry stored meanwhile does not add a hit to the miss its
+// call already counted.
+func TestRetryCountsOneOutcome(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		w := obcache.Wrap(c, func(ctx context.Context, _ int) (string, error) {
+			select {
+			case <-time.After(100 * time.Millisecond):
+				return "v", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}, opts("retry-hit")...)
+
+		leader, cancel := context.WithCancel(context.Background())
+		var wg sync.WaitGroup
+		wg.Go(func() { _, _ = w(leader, 1) })
+		time.Sleep(time.Millisecond)
+		wg.Go(func() { _, _ = w(context.Background(), 1) })
+		time.Sleep(time.Millisecond)
+		if err := c.Set(c.Key("retry-hit", 1), "v", time.Hour); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		cancel()
+		wg.Wait()
+		if s := c.Stats(); s.Hits()+s.Misses() != 2 {
+			t.Errorf("hits=%d misses=%d, want one outcome per call", s.Hits(), s.Misses())
+		}
+	})
+}
