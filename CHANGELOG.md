@@ -46,6 +46,7 @@ All notable changes to this project will be documented in this file.
 - `Wrap` panics on a function with no results: caching it ran it once per key and silently skipped its effects after. `ValidateWrappableFunction` now reports what `Wrap` refuses, and accepts multi-return functions without an error
 - Redis: the default key prefix is `obcache2:`, so a v2.0.x instance and a v2.1.0 instance do not read or wipe each other's entries during a rollout
 - On Redis or with compression, `Wrap` panics at startup on return types that cannot round-trip through JSON, and on `WithErrorCaching`. On Redis it also needs `WithName` or `WithKeyFunc`. Each message names the fix
+- `New` returns an error for a Redis config with neither `Addr` nor `Client`; it used to dial localhost. `NewRedisConfig(addr).WithRedis(...)` hits this, because `WithRedis` replaces the config
 
 ## [2.0.0] - 2025-10-27
 

@@ -285,7 +285,6 @@ func TestFindingF2(t *testing.T) {
 }
 
 func TestFindingF3(t *testing.T) {
-	suppress(t, "F3")
 	_, err := obcache.New(obcache.NewRedisConfig("127.0.0.1:1").WithRedis(&obcache.RedisConfig{KeyPrefix: "x:"}))
 	if err == nil {
 		t.Fatal("New accepted a Redis config with no target")
@@ -571,4 +570,19 @@ func TestFindingRF1(t *testing.T) {
 		obcache.Wrap(c, func(int) withPrivate { return withPrivate{} })
 		obcache.Wrap(c, lookupUser)
 	})
+}
+
+func TestFindingPC1(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mr.RequireAuth("secret")
+	if _, err := obcache.New(obcache.NewRedisConfig(mr.Addr())); err == nil {
+		t.Fatal("New accepted a server that refused the ping")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for mr.CurrentConnectionCount() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d connections left open by a failed New", mr.CurrentConnectionCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

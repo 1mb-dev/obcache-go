@@ -179,6 +179,10 @@ func createRedisStore(config *Config) (store.Store, error) {
 	if config.Redis.Client != nil {
 		redisConfig.Client = config.Redis.Client
 	} else {
+		if config.Redis.Addr == "" {
+			return nil, fmt.Errorf("redis configuration needs Addr or Client; WithRedis replaces what NewRedisConfig set, so assign config.Redis.KeyPrefix instead")
+		}
+
 		// Create Redis client from connection parameters
 		client := redis.NewClient(&redis.Options{
 			Addr:                  config.Redis.Addr,
@@ -194,6 +198,7 @@ func createRedisStore(config *Config) (store.Store, error) {
 		// Test the connection
 		ctx := context.Background()
 		if err := client.Ping(ctx).Err(); err != nil {
+			_ = client.Close() // the Ping error is the one worth reporting
 			return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 		}
 
