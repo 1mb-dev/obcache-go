@@ -152,7 +152,7 @@ func (c *Cache) bindKey(fnValue reflect.Value, fnType reflect.Type, opts *WrapOp
 		if opts.Name != "" {
 			return nil, errors.New("WithName and WithKeyFunc are mutually exclusive")
 		}
-		return func(args []any) (string, bool) { return opts.KeyFunc(args), true }, nil
+		return func(args []any) (string, bool) { return callKeyFunc(opts.KeyFunc, args) }, nil
 	}
 
 	name, err := c.identity(fnValue, fnType, opts)
@@ -206,11 +206,12 @@ func isTopLevel(name string) bool {
 }
 
 func (c *Cache) keyFor(name string, args []any) (string, bool) {
-	if custom := c.config.KeyGenFunc; custom != nil {
-		return name + "|" + custom(args), true
+	keyFunc := c.config.KeyGenFunc
+	if keyFunc == nil {
+		keyFunc = DefaultKeyFunc
 	}
-	key, err := encodeArgs(args)
-	if err != nil {
+	key, ok := callKeyFunc(keyFunc, args)
+	if !ok {
 		return "", false
 	}
 	return name + "|" + key, true

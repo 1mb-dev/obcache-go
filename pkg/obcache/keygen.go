@@ -33,9 +33,29 @@ const (
 func DefaultKeyFunc(args []any) string {
 	key, err := encodeArgs(args)
 	if err != nil {
-		panic("obcache.DefaultKeyFunc: " + err.Error())
+		panic(noEncodingError{err})
 	}
 	return key
+}
+
+// noEncodingError marks DefaultKeyFunc's panic, so a Wrap using it as a key
+// function can run the call uncached: the failing value may come from a request.
+type noEncodingError struct{ err error }
+
+func (e noEncodingError) Error() string { return "obcache.DefaultKeyFunc: " + e.err.Error() }
+
+// callKeyFunc runs a key function, reporting no key on noEncodingError. Any other
+// panic is the key function's own bug and is not ours to hide.
+func callKeyFunc(f KeyGenFunc, args []any) (key string, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, isEncoding := r.(noEncodingError); !isEncoding {
+				panic(r)
+			}
+			key, ok = "", false
+		}
+	}()
+	return f(args), true
 }
 
 func encodeArgs(args []any) (string, error) {

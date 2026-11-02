@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
 )
@@ -203,4 +204,37 @@ func TestKeyRefusesWhatWouldNotMatch(t *testing.T) {
 	mustPanic(t, "no Wrap named", func() { c.Key("typo", int64(1)) })
 	mustPanic(t, "got 2 args", func() { c.Key("n", int64(1), int64(2)) })
 	mustPanic(t, "takes int64", func() { c.Key("n", 1) })
+}
+
+// A value with no key encoding can come from a request, so it runs uncached rather
+// than panicking, including when DefaultKeyFunc is passed as the key function.
+func TestArgumentWithNoEncodingRunsUncached(t *testing.T) {
+	farFuture := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+	run := func(t *testing.T, c *obcache.Cache, options ...obcache.WrapOption) {
+		t.Helper()
+		var calls atomic.Int32
+		w := obcache.Wrap(c, func(time.Time) string { calls.Add(1); return "v" }, options...)
+		for range 2 {
+			if v := w(farFuture); v != "v" {
+				t.Errorf("v = %q", v)
+			}
+		}
+		if n := calls.Load(); n != 2 {
+			t.Errorf("underlying calls = %d, want 2", n)
+		}
+	}
+	t.Run("default key", func(t *testing.T) {
+		run(t, memoryCache(t, obcache.NewDefaultConfig()))
+	})
+	t.Run("WithKeyFunc(DefaultKeyFunc)", func(t *testing.T) {
+		run(t, memoryCache(t, obcache.NewDefaultConfig()), obcache.WithKeyFunc(obcache.DefaultKeyFunc))
+	})
+	t.Run("WithKeyGenFunc(DefaultKeyFunc)", func(t *testing.T) {
+		run(t, memoryCache(t, obcache.NewDefaultConfig().WithKeyGenFunc(obcache.DefaultKeyFunc)))
+	})
+	t.Run("a key function's own panic is not hidden", func(t *testing.T) {
+		c := memoryCache(t, obcache.NewDefaultConfig())
+		w := obcache.Wrap(c, lookupUser, obcache.WithKeyFunc(func([]any) string { panic("bug in key func") }))
+		mustPanic(t, "bug in key func", func() { w(1) })
+	})
 }
