@@ -96,7 +96,6 @@ func TestFindingB7(t *testing.T) {
 }
 
 func TestFindingB8(t *testing.T) {
-	suppress(t, "B8")
 	if _, err := obcache.New(obcache.NewDefaultConfig().WithEvictionType("bogus")); err == nil {
 		t.Error("New accepted an unknown eviction type")
 	}

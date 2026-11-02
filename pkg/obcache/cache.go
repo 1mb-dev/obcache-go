@@ -137,6 +137,12 @@ func createMemoryStore(config *Config) (store.Store, error) {
 		evictionType = eviction.LRU
 	}
 
+	switch evictionType {
+	case EvictionLRU, EvictionLFU, EvictionFIFO:
+	default:
+		return nil, fmt.Errorf("unknown eviction type %q: use EvictionLRU, EvictionLFU or EvictionFIFO", evictionType)
+	}
+
 	evictionConfig := eviction.Config{
 		Type:     evictionType,
 		Capacity: config.MaxEntries,
