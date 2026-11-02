@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -584,5 +587,42 @@ func TestFindingPC1(t *testing.T) {
 			t.Fatalf("%d connections left open by a failed New", mr.CurrentConnectionCount())
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestFindingD1(t *testing.T) {
+	fetch := func(t *testing.T, h http.Handler) string {
+		t.Helper()
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		res, err := http.Get(srv.URL + "/keys")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+	for _, b := range backends() {
+		t.Run(b.name, func(t *testing.T) {
+			c := b.new(t)
+			w := obcache.Wrap(c, func(string) (string, error) { return "ssn=123", nil }, opts("profile")...)
+			_, _ = w("sk_live_abcdef")
+
+			body := fetch(t, c.DebugHandler())
+			if strings.Contains(body, "sk_live") || strings.Contains(body, "ssn=123") {
+				t.Errorf("default debug response exposed a key or value: %s", body)
+			}
+			if !strings.Contains(body, "profile") || !strings.Contains(body, "createdAt") {
+				t.Errorf("default debug response lost its metadata: %s", body)
+			}
+			full := fetch(t, c.DebugHandler(obcache.WithDebugValues()))
+			if !strings.Contains(full, "sk_live") || !strings.Contains(full, "ssn=123") {
+				t.Errorf("WithDebugValues response: %s", full)
+			}
+		})
 	}
 }
