@@ -59,10 +59,13 @@ func WithDebugValues() DebugOption {
 	return func(o *debugOptions) { o.values = true }
 }
 
-// debugKeyName is the part of a key that names a function, never its arguments.
-func debugKeyName(key string) string {
+// debugKeyName reduces a key to the name of the function that owns it. Only a name
+// this Cache bound qualifies: text before a '|' in a custom key is the caller's data.
+func (c *Cache) debugKeyName(key string) string {
 	if name, _, found := strings.Cut(key, "|"); found {
-		return name
+		if _, bound := c.names.Load(name); bound {
+			return name
+		}
 	}
 	return "(unnamed)"
 }
@@ -116,7 +119,7 @@ func (c *Cache) DebugHandler(options ...DebugOption) http.Handler {
 			for _, key := range keys {
 				if entry, found := c.store.Get(r.Context(), key); found {
 					debugKey := DebugKey{
-						Key:       debugKeyName(key),
+						Key:       c.debugKeyName(key),
 						ExpiresAt: entry.ExpiresAt,
 						CreatedAt: entry.CreatedAt,
 						Age:       formatDuration(entry.Age()),

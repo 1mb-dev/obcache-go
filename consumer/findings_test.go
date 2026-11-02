@@ -624,6 +624,14 @@ func TestFindingD1(t *testing.T) {
 			if !strings.Contains(body, "profile") || !strings.Contains(body, "createdAt") {
 				t.Errorf("default debug response lost its metadata: %s", body)
 			}
+
+			custom := b.new(t)
+			k := obcache.Wrap(custom, func(string) (string, error) { return "v", nil },
+				obcache.WithKeyFunc(func(args []any) string { return args[0].(string) + "|session" }))
+			_, _ = k("sk_live_abcdef")
+			if got := fetch(t, custom.DebugHandler()); strings.Contains(got, "sk_live") {
+				t.Errorf("a custom key leaked through the name part: %s", got)
+			}
 			full := fetch(t, c.DebugHandler(obcache.WithDebugValues()))
 			if !strings.Contains(full, "sk_live") || !strings.Contains(full, "ssn=123") {
 				t.Errorf("WithDebugValues response: %s", full)
