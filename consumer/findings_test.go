@@ -415,6 +415,36 @@ func TestPrometheusCountersAcrossCaches(t *testing.T) {
 	})
 }
 
+func TestPrometheusEvictionLabelIsTruthful(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	exporter, err := metrics.NewPrometheusExporter(metrics.NewDefaultConfig(), &metrics.PrometheusConfig{Registry: reg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := memoryCache(t, obcache.NewDefaultConfig().WithMaxEntries(1))
+	_ = c.Set("a", 1, time.Hour)
+	_ = c.Set("b", 2, time.Hour)
+	if err := exporter.ExportStats(c.Stats(), metrics.Labels{"cache_name": "e"}); err != nil {
+		t.Fatal(err)
+	}
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() != "obcache_evictions_total" {
+			continue
+		}
+		for _, l := range f.GetMetric()[0].GetLabel() {
+			if l.GetName() == "reason" && l.GetValue() != "unspecified" {
+				t.Errorf("reason = %q", l.GetValue())
+			}
+		}
+		return
+	}
+	t.Error("obcache_evictions_total not exported")
+}
+
 func counter(t *testing.T, reg *prometheus.Registry, name string) float64 {
 	t.Helper()
 	families, err := reg.Gather()

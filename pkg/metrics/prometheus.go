@@ -9,6 +9,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// evictionReasonUnspecified labels evictions from Stats, which counts them as one
+// total across capacity and TTL.
+const evictionReasonUnspecified = "unspecified"
+
 // PrometheusExporter implements the Exporter interface for Prometheus metrics
 type PrometheusExporter struct {
 	config   *Config
@@ -153,7 +157,7 @@ func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labe
 		return err
 	}
 
-	p.evictionsTotal, err = p.createCounterVec(p.config.MetricNames.CacheEvictionsTotal, "Total number of cache evictions", append(baseLabels, "reason"), defaultLabels)
+	p.evictionsTotal, err = p.createCounterVec(p.config.MetricNames.CacheEvictionsTotal, "Total number of cache evictions. Stats totals carry no reason, so reason is unspecified", append(baseLabels, "reason"), defaultLabels)
 	if err != nil {
 		return err
 	}
@@ -245,7 +249,7 @@ func (p *PrometheusExporter) ExportStats(stats Stats, labels Labels) error {
 	for k, v := range baseLabels {
 		evictionLabels[k] = v
 	}
-	evictionLabels["reason"] = "capacity" // Default reason for stats export
+	evictionLabels["reason"] = evictionReasonUnspecified
 	p.evictionsTotal.With(evictionLabels).Add(delta(now.evictions, last.evictions))
 	*last = now
 
