@@ -85,7 +85,7 @@ func (c *Cache) DebugHandler() http.Handler {
 			response.Keys = make([]DebugKey, 0, len(keys))
 
 			for _, key := range keys {
-				if entry, found := c.store.Get(key); found {
+				if entry, found := c.store.Get(r.Context(), key); found {
 					debugKey := DebugKey{
 						Key:       key,
 						Value:     entry.Value,

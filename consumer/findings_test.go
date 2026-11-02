@@ -197,7 +197,6 @@ func TestFindingR1(t *testing.T) {
 }
 
 func TestFindingR2(t *testing.T) {
-	suppress(t, "R2")
 	mr := miniredis.RunT(t)
 	g := newGate(t, mr.Addr())
 	c := memoryCache(t, obcache.NewRedisConfig(g.addr))

@@ -142,6 +142,14 @@ func createMemoryStore(config *Config) (store.Store, error) {
 	return memory.NewWithStrategy(evictionConfig)
 }
 
+// A cache must not turn a hung Redis into a hung caller: without these, go-redis
+// ignores ctx deadlines and retries for seconds on a silent connection.
+const (
+	redisDialTimeout = time.Second
+	redisIOTimeout   = 250 * time.Millisecond
+	redisMaxRetries  = 1
+)
+
 // createRedisStore creates a Redis-based store
 func createRedisStore(config *Config) (store.Store, error) {
 	if config.Redis == nil {
@@ -160,9 +168,14 @@ func createRedisStore(config *Config) (store.Store, error) {
 	} else {
 		// Create Redis client from connection parameters
 		client := redis.NewClient(&redis.Options{
-			Addr:     config.Redis.Addr,
-			Password: config.Redis.Password,
-			DB:       config.Redis.DB,
+			Addr:                  config.Redis.Addr,
+			Password:              config.Redis.Password,
+			DB:                    config.Redis.DB,
+			ContextTimeoutEnabled: true,
+			DialTimeout:           redisDialTimeout,
+			ReadTimeout:           redisIOTimeout,
+			WriteTimeout:          redisIOTimeout,
+			MaxRetries:            redisMaxRetries,
 		})
 
 		// Test the connection
@@ -195,7 +208,7 @@ func (c *Cache) GetContext(ctx context.Context, key string) (any, bool) {
 	var found bool
 
 	c.mu.RLock()
-	entry, ok := c.store.Get(key)
+	entry, ok := c.store.Get(ctx, key)
 	if !ok {
 		c.mu.RUnlock()
 		c.miss(ctx, key)
@@ -241,7 +254,7 @@ func (c *Cache) SetContext(ctx context.Context, key string, value any, ttl time.
 	}
 
 	c.mu.Lock()
-	setErr := c.store.Set(key, entry)
+	setErr := c.store.Set(ctx, key, entry)
 	if setErr == nil {
 		c.updateKeyCount()
 	}
@@ -319,7 +332,7 @@ func (c *Cache) Len() int {
 // Has checks if a key exists in the cache
 func (c *Cache) Has(key string) bool {
 	c.mu.RLock()
-	entry, found := c.store.Get(key)
+	entry, found := c.store.Get(context.Background(), key)
 	exists := found && !entry.IsExpired()
 	c.mu.RUnlock()
 	return exists
@@ -328,7 +341,7 @@ func (c *Cache) Has(key string) bool {
 // TTL returns the remaining TTL for a key
 func (c *Cache) TTL(key string) (time.Duration, bool) {
 	c.mu.RLock()
-	entry, ok := c.store.Get(key)
+	entry, ok := c.store.Get(context.Background(), key)
 	c.mu.RUnlock()
 
 	if ok && !entry.IsExpired() {

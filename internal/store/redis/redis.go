@@ -73,9 +73,9 @@ func New(config *Config) (*Store, error) {
 }
 
 // Get retrieves an entry by key
-func (s *Store) Get(key string) (*entry.Entry, bool) {
+func (s *Store) Get(ctx context.Context, key string) (*entry.Entry, bool) {
 	redisKey := s.buildKey(key)
-	result := s.client.Get(s.ctx, redisKey)
+	result := s.client.Get(ctx, redisKey)
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
 			return nil, false // Key not found
@@ -92,14 +92,14 @@ func (s *Store) Get(key string) (*entry.Entry, bool) {
 	entry, err := s.deserializeEntry([]byte(data))
 	if err != nil {
 		// If deserialization fails, remove the corrupted key
-		s.client.Del(s.ctx, redisKey)
+		s.client.Del(ctx, redisKey)
 		return nil, false
 	}
 
 	// Check if entry has expired
 	if entry.IsExpired() {
 		// Remove expired entry
-		s.client.Del(s.ctx, redisKey)
+		s.client.Del(ctx, redisKey)
 
 		// Call cleanup callback if set
 		if s.cleanupCallback != nil {
@@ -112,9 +112,9 @@ func (s *Store) Get(key string) (*entry.Entry, bool) {
 }
 
 // Set stores an entry with the given key
-func (s *Store) Set(key string, entry *entry.Entry) error {
+func (s *Store) Set(ctx context.Context, key string, entry *entry.Entry) error {
 	redisKey := s.buildKey(key)
-	return s.saveEntryToRedis(redisKey, entry)
+	return s.saveEntryToRedis(ctx, redisKey, entry)
 }
 
 // Delete removes an entry by key
@@ -262,7 +262,7 @@ func (s *Store) deserializeEntry(data []byte) (*entry.Entry, error) {
 }
 
 // saveEntryToRedis saves an entry to Redis with appropriate TTL
-func (s *Store) saveEntryToRedis(redisKey string, e *entry.Entry) error {
+func (s *Store) saveEntryToRedis(ctx context.Context, redisKey string, e *entry.Entry) error {
 	data, err := s.serializeEntry(e)
 	if err != nil {
 		return err
@@ -274,7 +274,7 @@ func (s *Store) saveEntryToRedis(redisKey string, e *entry.Entry) error {
 		remaining := e.TTL()
 		if remaining <= 0 {
 			// Entry has already expired
-			return s.client.Del(s.ctx, redisKey).Err()
+			return s.client.Del(ctx, redisKey).Err()
 		}
 		redisTTL = remaining
 	} else if s.defaultTTL > 0 {
@@ -283,9 +283,9 @@ func (s *Store) saveEntryToRedis(redisKey string, e *entry.Entry) error {
 	}
 
 	if redisTTL > 0 {
-		return s.client.SetEx(s.ctx, redisKey, string(data), redisTTL).Err()
+		return s.client.SetEx(ctx, redisKey, string(data), redisTTL).Err()
 	}
-	return s.client.Set(s.ctx, redisKey, string(data), 0).Err()
+	return s.client.Set(ctx, redisKey, string(data), 0).Err()
 }
 
 // Ensure Store implements the required interfaces

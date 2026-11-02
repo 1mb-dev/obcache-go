@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -46,7 +47,7 @@ func NewWithStrategyAndCleanup(config eviction.Config, cleanupInterval time.Dura
 }
 
 // Get retrieves an entry by key
-func (s *StrategyStore) Get(key string) (*entry.Entry, bool) {
+func (s *StrategyStore) Get(_ context.Context, key string) (*entry.Entry, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
@@ -76,7 +77,7 @@ func (s *StrategyStore) Get(key string) (*entry.Entry, bool) {
 }
 
 // Set stores an entry with the given key
-func (s *StrategyStore) Set(key string, entry *entry.Entry) error {
+func (s *StrategyStore) Set(_ context.Context, key string, entry *entry.Entry) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
