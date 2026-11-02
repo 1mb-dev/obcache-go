@@ -229,7 +229,6 @@ func TestFindingR2(t *testing.T) {
 }
 
 func TestFindingR3(t *testing.T) {
-	suppress(t, "R3")
 	cfg, mr := miniConfig(t)
 	c := memoryCache(t, cfg)
 	if err := c.Set("k", "v", time.Hour); err != nil {
@@ -303,7 +302,6 @@ func TestFindingF3(t *testing.T) {
 }
 
 func TestFindingF6(t *testing.T) {
-	suppress(t, "F6")
 	cfg, _ := miniConfig(t)
 	c := memoryCache(t, cfg)
 	bounded(t, 20*time.Second, "concurrent Set with Keys, Len and Stats", func() {

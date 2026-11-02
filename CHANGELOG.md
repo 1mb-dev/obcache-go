@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Redis: concurrent `Set` with `Keys`, `Len` or `Stats` no longer deadlocks
+- Redis: a cache hit no longer writes the entry back, which could restore a key another instance deleted
+
 ## [2.0.0] - 2025-10-27
 
 ### Major Simplification & Breaking Changes
