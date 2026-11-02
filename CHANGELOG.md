@@ -2,7 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.1.0] - 2026-11-02
+
+Every advertised feature now works from an outside module. `go get github.com/1mb-dev/obcache-go/v2` is the install path.
+
+### Security
+
+- Default cache keys could collide across functions and arguments, so a call could return another caller's cached value, and a caller-controlled string could reach such an entry in some shapes. Affects v2.0.2 and `github.com/vnykmshr/obcache-go` v1.0.0 to v1.1.0, which retract cannot reach. Upgrade to v2.1.0.
+- `DebugHandler` served keys and plaintext values with no authentication; see Behavior Changes.
+- v2.0.0 to v2.0.2 are retracted.
+
+### Behavior Changes
+
+Some 2.0.x code now panics at `Wrap` or errors at `New`. Each message names the fix. Tests on the memory store will not catch the Redis and compression changes: construct your production config in a test, and `Wrap` at startup.
+
+**All backends**
+
+- The default key format changed, and default keys now include the function's identity, so wrapped functions no longer share entries. `Delete(DefaultKeyFunc(args))` and `Delete(myKeyGen(args))` silently stop matching a wrapped entry; use `Cache.Key`
+- `Wrap` panics on func, chan and unexported-field parameters unless a custom key function is set, because the default key cannot encode them. This includes `func(*sql.DB, int)`, which worked with one database; use `WithKeyFunc`
+- `DefaultKeyFunc` panics on arguments with no encoding when called directly. Passed to `WithKeyFunc` or `WithKeyGenFunc`, such a call runs uncached
+- `Cache.Key` panics on an unbound name or mismatched arguments
+- A closure or method value under `WithName` panics on its second `Wrap`, which can be at runtime if `Wrap` runs per request; use `WithKeyFunc` there. Without a name, closures and method values wrapped per call go cold and leave entries behind
+- `New` returns an error for an unknown eviction type instead of silently using LRU
+- `ValidateWrappableFunction` now reports what `Wrap` refuses: it accepts functions with no results and multi-return functions without an error, and rejects parameter types the default key cannot encode
+- A function returning only `error` is now wrapped as one: nil is cached, and a non-nil error is not, unless asked. This covers a sole pointer-typed error return
+- `DebugHandler` and `NewDebugServer` no longer serve keys or values by default, because they have no authentication; `WithDebugValues` restores them
+
+**Redis or compression**
+
+- `Wrap` panics at startup on return types that cannot round-trip through JSON: interfaces, including `any`, `[]any` and `map[string]any`, which ran on 2.0.x; unexported fields; `json:"-"`; func; chan; complex; one-way marshalers. Return a concrete type or `json.RawMessage`
+- `WithErrorCaching` panics at `Wrap`
+- Compression now compresses, so it costs CPU it did not before: `Level` unset used to mean no compression
+- The stored entry gained a `format` field. An entry without one is a miss and is left in place
+
+**Redis**
+
+- Every `Wrap` needs `WithName` or `WithKeyFunc`. A per-request `Wrap` migrates to `WithKeyFunc`, not `WithName`
+- `NewRedisConfig(addr).WithRedis(...)` now errors at `New`, because `WithRedis` replaces the config and it used to dial localhost. Assign `config.Redis.KeyPrefix` instead
+- The default key prefix is `obcache2:`, so v2.0.x and v2.1.0 instances do not read or wipe each other's entries. With an explicit `KeyPrefix` they share a namespace, and a 2.0.x instance's `Close` wipes it: change `KeyPrefix` in the same deploy, or drain old instances first. Either way, 2.0.x entries are cold
+- `Close` no longer clears Redis
+- Entries written with no TTL under an old prefix never expire; remove them with `SCAN` and `UNLINK`
+- Rolling back: code using `WithName` or `Cache.Key` does not compile against 2.0.x
+
+**Prometheus**
+
+- Counters drop to true values, so dashboards and alert thresholds shift
+- `obcache_evictions_total` uses `reason="unspecified"`, because exported totals do not separate capacity from TTL evictions
+- `WithKeyValueSizes` has no effect
+- `pkg/obcache` no longer imports `pkg/metrics`, so importing it alone does not link Prometheus. `pkg/metrics` keeps every exported name; `%T` and `reflect.PkgPath` of the shared types now show `internal/metricsapi`
 
 ### Fixed
 
@@ -18,7 +65,6 @@ All notable changes to this project will be documented in this file.
 - `Wrap` handles a nil value in an interface return, functions returning only `error`, and variadic functions
 - Default cache keys encode every argument in full: `time.Time` values, long slices, large maps and structs with many fields no longer share keys, and `[16]byte` arguments no longer panic
 - Wrapped functions no longer share entries by default: two functions on one cache could return each other's values, or panic on differing return types
-- `New` returns an error for an unknown eviction type instead of silently using LRU
 - Redis: `Close` no longer deletes shared entries, and it closes a client obcache built
 - Redis: key listing and `Clear` use SCAN with an escaped prefix, so a prefix containing a glob character cannot reach another application's keys
 - `Wrap` over Redis or compression decodes a hit into the declared return type, so integers, structs, pointers, slices and multi-return functions no longer panic on a hit, and large integers stay exact
@@ -27,9 +73,11 @@ All notable changes to this project will be documented in this file.
 - Decompression is limited to `compression.MaxDecompressedSize`, so a small entry in a shared Redis cannot exhaust memory
 - Prometheus counters report true totals; each export used to add the running total again, so counters grew with every reporting interval
 
-### Security
+### Added
 
-- Default cache keys could collide across arguments, so a call could return another caller's cached value, and a caller-controlled string could reach such an entry in some shapes. Keys are now unambiguous. Affects v2.0.2 and `github.com/vnykmshr/obcache-go` v1.0.0 to v1.1.0, which retract cannot reach. Upgrade to v2.1.0.
+- `WithName` gives a wrapped function a stable identity, and `Cache.Key` returns the key its entry is stored under, for use with `Delete`
+- `EvictionLRU`, `EvictionLFU` and `EvictionFIFO` select an eviction strategy without importing an internal package
+- `Stats.DecodeFailures` counts entries that could not be read back
 
 ### Deprecated
 
@@ -37,22 +85,17 @@ All notable changes to this project will be documented in this file.
 - `metrics.WithKeyValueSizes`, `IncludeKeyValueSizes`, `SizeBuckets` and the `CacheOperationsTotal`, `CacheErrorsTotal`, `CacheKeySize` and `CacheValueSize` names: these metrics were registered but never written, and are no longer registered
 - `WrapSimple`, `WrapWithError`, `WrapFunc0`, `WrapFunc1`, `WrapFunc2` and their `WithError` forms: `Wrap` covers them. The `TestTTL` and `ExampleTTL` constants: define your own
 
-### Added
+## [2.0.2] - 2026-02-15
 
-- `WithName` gives a wrapped function a stable identity, and `Cache.Key` returns the key its entry is stored under, for use with `Delete`
-- `EvictionLRU`, `EvictionLFU` and `EvictionFIFO` select an eviction strategy without importing an internal package
-- `Stats.DecodeFailures` counts entries that could not be read back
+### Fixed
+
+- Module path gains `/v2`. This is the first version importable as `github.com/1mb-dev/obcache-go/v2`
+
+## [2.0.1] - 2026-02-15
 
 ### Changed
 
-- `ValidateWrappableFunction` now reports what `Wrap` refuses: it accepts functions with no results and multi-return functions without an error, and rejects parameter types the default key cannot encode
-- `Wrap` panics on a function with no results: caching it ran it once per key and silently skipped its effects after. `ValidateWrappableFunction` now reports what `Wrap` refuses, and accepts multi-return functions without an error
-- Redis: the default key prefix is `obcache2:`, so a v2.0.x instance and a v2.1.0 instance do not read or wipe each other's entries during a rollout
-- On Redis or with compression, `Wrap` panics at startup on return types that cannot round-trip through JSON, and on `WithErrorCaching`. On Redis it also needs `WithName` or `WithKeyFunc`. Each message names the fix
-- `New` returns an error for a Redis config with neither `Addr` nor `Client`; it used to dial localhost. `NewRedisConfig(addr).WithRedis(...)` hits this, because `WithRedis` replaces the config
-- `DebugHandler` no longer serves keys or values by default, because it has no authentication; `WithDebugValues` restores them
-- Importing `pkg/obcache` no longer links the Prometheus client; `pkg/metrics` keeps the exporter, with the same exported API. `%T` and `reflect.PkgPath` of the shared metric types now show `internal/metricsapi`
-- Prometheus: `obcache_evictions_total` uses `reason="unspecified"`, because exported totals do not separate capacity from TTL evictions
+- Repository moved to `github.com/1mb-dev/obcache-go`. The module path had no `/v2`, so this version cannot be imported as v2
 
 ## [2.0.0] - 2025-10-27
 

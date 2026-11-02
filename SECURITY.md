@@ -2,12 +2,12 @@
 
 ## Supported Versions
 
-We support the latest version of obcache-go with security updates. Once the project reaches v1.0.0, we will maintain security updates for the current major version.
+We support the latest release of obcache-go with security updates.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| main    | :white_check_mark: |
-| < 1.0   | :warning: Pre-release, limited support |
+| 2.1.x   | :white_check_mark: |
+| < 2.1   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -59,4 +59,4 @@ For security-related questions or concerns:
 - GitHub: @1mb-dev
 - Security Issues: [GitHub Security Advisories](https://github.com/1mb-dev/obcache-go/security/advisories)
 
-For general questions about obcache-go, please use GitHub Issues or Discussions.
+For general questions about obcache-go, please use GitHub Issues.
