@@ -608,47 +608,60 @@ func createErrorReturn(fnType reflect.Type, err error) []reflect.Value {
 	return results
 }
 
-// WrapSimple is a convenience function for wrapping simple functions without error returns
-// This is a specialized version that's easier to use for simple cases
+// WrapSimple wraps a function without an error return.
+//
+// Deprecated: use Wrap.
 func WrapSimple[T any, R any](cache *Cache, fn func(T) R, options ...WrapOption) func(T) R {
 	wrapped := Wrap(cache, fn, options...)
 	return wrapped
 }
 
-// WrapWithError is a convenience function for wrapping functions that return (T, error)
+// WrapWithError wraps a function returning (R, error).
+//
+// Deprecated: use Wrap.
 func WrapWithError[T any, R any](cache *Cache, fn func(T) (R, error), options ...WrapOption) func(T) (R, error) {
 	wrapped := Wrap(cache, fn, options...)
 	return wrapped
 }
 
-// Example wrapper functions for common patterns
-
-// WrapFunc0 wraps a function with no arguments
+// WrapFunc0 wraps a function with no arguments.
+//
+// Deprecated: use Wrap.
 func WrapFunc0[R any](cache *Cache, fn func() R, options ...WrapOption) func() R {
 	return Wrap(cache, fn, options...)
 }
 
-// WrapFunc1 wraps a function with one argument
+// WrapFunc1 wraps a function with one argument.
+//
+// Deprecated: use Wrap.
 func WrapFunc1[T any, R any](cache *Cache, fn func(T) R, options ...WrapOption) func(T) R {
 	return Wrap(cache, fn, options...)
 }
 
-// WrapFunc2 wraps a function with two arguments
+// WrapFunc2 wraps a function with two arguments.
+//
+// Deprecated: use Wrap.
 func WrapFunc2[T1, T2, R any](cache *Cache, fn func(T1, T2) R, options ...WrapOption) func(T1, T2) R {
 	return Wrap(cache, fn, options...)
 }
 
-// WrapFunc0WithError wraps a function with no arguments that returns an error
+// WrapFunc0WithError wraps a function with no arguments that returns an error.
+//
+// Deprecated: use Wrap.
 func WrapFunc0WithError[R any](cache *Cache, fn func() (R, error), options ...WrapOption) func() (R, error) {
 	return Wrap(cache, fn, options...)
 }
 
-// WrapFunc1WithError wraps a function with one argument that returns an error
+// WrapFunc1WithError wraps a function with one argument that returns an error.
+//
+// Deprecated: use Wrap.
 func WrapFunc1WithError[T, R any](cache *Cache, fn func(T) (R, error), options ...WrapOption) func(T) (R, error) {
 	return Wrap(cache, fn, options...)
 }
 
-// WrapFunc2WithError wraps a function with two arguments that returns an error
+// WrapFunc2WithError wraps a function with two arguments that returns an error.
+//
+// Deprecated: use Wrap.
 func WrapFunc2WithError[T1, T2, R any](cache *Cache, fn func(T1, T2) (R, error), options ...WrapOption) func(T1, T2) (R, error) {
 	return Wrap(cache, fn, options...)
 }

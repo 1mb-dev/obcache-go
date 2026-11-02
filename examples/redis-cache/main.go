@@ -52,10 +52,8 @@ func main() {
 func basicRedisExample() {
 	// Create a Redis cache with simple address
 	config := obcache.NewRedisConfig("localhost:6379").
-		WithRedis(&obcache.RedisConfig{
-			KeyPrefix: "example:",
-		}).
 		WithDefaultTTL(30 * time.Minute)
+	config.Redis.KeyPrefix = "example:"
 
 	cache, err := obcache.New(config)
 	if err != nil {
@@ -93,10 +91,8 @@ func basicRedisExample() {
 func functionWrappingExample() {
 	// Create Redis cache configuration
 	config := obcache.NewRedisConfig("localhost:6379").
-		WithRedis(&obcache.RedisConfig{
-			KeyPrefix: "func:",
-		}).
 		WithDefaultTTL(15 * time.Minute)
+	config.Redis.KeyPrefix = "func:"
 
 	cache, err := obcache.New(config)
 	if err != nil {
@@ -164,10 +160,8 @@ func distributedCachingExample() {
 
 	// Create cache configuration with the custom client
 	config := obcache.NewRedisConfigWithClient(client).
-		WithRedis(&obcache.RedisConfig{
-			KeyPrefix: "distributed:",
-		}).
 		WithDefaultTTL(1 * time.Hour)
+	config.Redis.KeyPrefix = "distributed:"
 
 	cache, err := obcache.New(config)
 	if err != nil {

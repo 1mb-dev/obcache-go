@@ -2,8 +2,9 @@ package obcache
 
 import "time"
 
-// Test and example constants for consistent usage across the codebase.
-// These constants help maintain consistency in tests and examples.
+// Test and example constants. They should not have been exported.
+//
+// Deprecated: define your own.
 const (
 	// TestTTL is the standard TTL used in test cases
 	TestTTL = time.Hour

@@ -2,6 +2,9 @@ module github.com/1mb-dev/obcache-go/v2
 
 go 1.26.0
 
+// Default keys let a call read another caller's entry. Upgrade to v2.1.0.
+retract [v2.0.0, v2.0.2]
+
 require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/prometheus/client_golang v1.25.0

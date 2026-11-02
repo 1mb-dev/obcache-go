@@ -102,13 +102,13 @@ func NewCachedUserService() (*CachedUserService, error) {
 	// Add cache monitoring hooks
 	hooks := &obcache.Hooks{}
 	hooks.AddOnHit(func(ctx context.Context, key string, value any) {
-		log.Printf("Cache HIT for key: %s", key)
+		log.Print("Cache hit")
 	})
 	hooks.AddOnMiss(func(ctx context.Context, key string) {
-		log.Printf("Cache MISS for key: %s", key)
+		log.Print("Cache miss")
 	})
 	hooks.AddOnEvict(func(ctx context.Context, key string, value any, reason obcache.EvictReason) {
-		log.Printf("Cache EVICT: key=%s, reason=%s", key, reason)
+		log.Printf("Cache evict: reason=%s", reason)
 	})
 
 	// Create cached function with error caching disabled for user queries

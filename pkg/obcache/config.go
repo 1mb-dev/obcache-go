@@ -22,8 +22,9 @@ const (
 
 // RedisConfig holds Redis-specific configuration
 type RedisConfig struct {
-	// Client is a pre-configured Redis client
-	// If nil, a new client will be created using Addr, Password, DB
+	// Client is an existing Redis client to use. It needs ContextTimeoutEnabled and
+	// its own timeouts, or a hung server stalls callers; it is also the route to TLS.
+	// New does not ping it, and Close does not close it.
 	Client redis.Cmdable
 
 	// Addr is the Redis server address (host:port)
@@ -38,7 +39,8 @@ type RedisConfig struct {
 	// Only used if Client is nil
 	DB int
 
-	// KeyPrefix is prepended to all cache keys
+	// KeyPrefix is prepended to all cache keys. It is the boundary between services
+	// on one Redis: Clear removes every key that starts with it.
 	// Default: "obcache2:"
 	KeyPrefix string
 }

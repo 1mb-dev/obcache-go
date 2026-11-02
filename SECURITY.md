@@ -2,61 +2,21 @@
 
 ## Supported Versions
 
-We support the latest version of obcache-go with security updates. Once the project reaches v1.0.0, we will maintain security updates for the current major version.
-
 | Version | Supported          |
 | ------- | ------------------ |
-| main    | :white_check_mark: |
-| < 1.0   | :warning: Pre-release, limited support |
+| 2.1.x   | :white_check_mark: |
+| < 2.1   | :x:                |
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security vulnerability in obcache-go, please report it privately.
+Report privately through [GitHub Security Advisories](https://github.com/1mb-dev/obcache-go/security/advisories), not in a public issue. Include steps to reproduce and the impact you see.
 
-### How to Report
+We acknowledge reports within 48 hours, aim to resolve critical issues within 7 days, and coordinate disclosure timing with you. There is no bug bounty; with your permission, we credit you in the release notes.
 
-1. **DO NOT** create a public GitHub issue for security vulnerabilities
-2. Report security issues via [GitHub Security Advisories](https://github.com/1mb-dev/obcache-go/security/advisories)
-3. Include as much information as possible:
-   - Description of the vulnerability
-   - Steps to reproduce the issue
-   - Potential impact
-   - Any suggested fixes
+## Using obcache-go Safely
 
-### What to Expect
+The trust limits are in the README under [Limits](README.md#limits). In short: anyone who can write to your Redis can forge cached values, keys up to 64 bytes hold arguments in clear, and `DebugHandler` has no authentication.
 
-- **Initial Response**: We will acknowledge your report within 48 hours
-- **Status Updates**: We will provide regular updates on our progress
-- **Resolution Timeline**: We aim to resolve critical security issues within 7 days
-- **Disclosure**: We will coordinate with you on public disclosure timing
+## Tooling
 
-### Security Best Practices
-
-When using obcache-go:
-
-1. **Keep Dependencies Updated**: Regularly update to the latest version
-2. **Validate Inputs**: Always validate data before caching
-3. **Secure Key Generation**: Use appropriate key generation for sensitive data
-4. **Monitor Cache Access**: Implement appropriate access controls
-5. **Resource Limits**: Set appropriate cache size limits
-
-## Bug Bounty
-
-At this time, we do not offer a formal bug bounty program. However, we greatly appreciate security researchers who responsibly disclose vulnerabilities and will publicly acknowledge their contributions (with permission).
-
-## Security Tooling
-
-This project uses several security tools:
-
-- **govulncheck**: Automated vulnerability scanning for Go dependencies
-- **gosec**: Static security analysis for Go code
-- **golangci-lint**: Comprehensive linting including security checks
-- **Dependabot**: Automated dependency updates
-
-## Contact
-
-For security-related questions or concerns:
-- GitHub: @1mb-dev
-- Security Issues: [GitHub Security Advisories](https://github.com/1mb-dev/obcache-go/security/advisories)
-
-For general questions about obcache-go, please use GitHub Issues or Discussions.
+CI runs govulncheck and golangci-lint, including gosec. Dependabot keeps dependencies current.

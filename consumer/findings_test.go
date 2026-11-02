@@ -22,7 +22,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const fallback = "fallback"
+const (
+	fallback       = "fallback"
+	cacheNameLabel = "cache_name"
+)
 
 func TestFindingB4(t *testing.T) {
 	for _, b := range backends() {
@@ -333,7 +336,7 @@ func TestFindingP1(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = c.Set("k", "v", time.Hour)
-	labels := metrics.Labels{"cache_name": "p1"}
+	labels := metrics.Labels{cacheNameLabel: "p1"}
 	for range 10 {
 		c.Get("k")
 	}
@@ -392,7 +395,7 @@ func TestPrometheusCountersAcrossCaches(t *testing.T) {
 		a, b := memoryCache(t, obcache.NewDefaultConfig()), memoryCache(t, obcache.NewDefaultConfig())
 		hit(a, 7)
 		hit(b, 7)
-		labels := metrics.Labels{"cache_name": "default"}
+		labels := metrics.Labels{cacheNameLabel: "default"}
 		for range 3 {
 			_ = exporter.ExportStats(a.Stats(), labels)
 			_ = exporter.ExportStats(b.Stats(), labels)
@@ -406,15 +409,15 @@ func TestPrometheusCountersAcrossCaches(t *testing.T) {
 		a, b := memoryCache(t, obcache.NewDefaultConfig()), memoryCache(t, obcache.NewDefaultConfig())
 		hit(a, 3)
 		hit(b, 4)
-		_ = exporter.ExportStats(a.Stats(), metrics.Labels{"cache_name": "a"})
-		_ = exporter.ExportStats(b.Stats(), metrics.Labels{"cache_name": "b"})
+		_ = exporter.ExportStats(a.Stats(), metrics.Labels{cacheNameLabel: "a"})
+		_ = exporter.ExportStats(b.Stats(), metrics.Labels{cacheNameLabel: "b"})
 		if got := counter(t, reg, "obcache_hits_total"); got != 7 {
 			t.Errorf("obcache_hits_total = %v for 7 hits", got)
 		}
 	})
 	t.Run("a value snapshot counts deltas", func(t *testing.T) {
 		exporter, reg := newExporter(t)
-		labels := metrics.Labels{"cache_name": "v"}
+		labels := metrics.Labels{cacheNameLabel: "v"}
 		_ = exporter.ExportStats(snapshotStats{hits: 10}, labels)
 		_ = exporter.ExportStats(snapshotStats{hits: 12}, labels)
 		if got := counter(t, reg, "obcache_hits_total"); got != 12 {
@@ -424,7 +427,7 @@ func TestPrometheusCountersAcrossCaches(t *testing.T) {
 	t.Run("a reset does not lose counts", func(t *testing.T) {
 		exporter, reg := newExporter(t)
 		s := &resettableStats{hits: 10}
-		labels := metrics.Labels{"cache_name": "r"}
+		labels := metrics.Labels{cacheNameLabel: "r"}
 		_ = exporter.ExportStats(s, labels)
 		s.hits = 3
 		_ = exporter.ExportStats(s, labels)
@@ -443,7 +446,7 @@ func TestPrometheusEvictionLabelIsTruthful(t *testing.T) {
 	c := memoryCache(t, obcache.NewDefaultConfig().WithMaxEntries(1))
 	_ = c.Set("a", 1, time.Hour)
 	_ = c.Set("b", 2, time.Hour)
-	if err := exporter.ExportStats(c.Stats(), metrics.Labels{"cache_name": "e"}); err != nil {
+	if err := exporter.ExportStats(c.Stats(), metrics.Labels{cacheNameLabel: "e"}); err != nil {
 		t.Fatal(err)
 	}
 	families, err := reg.Gather()
