@@ -41,6 +41,10 @@
 //
 // Memory: Get and Wrap return the stored value, not a copy. Do not mutate results.
 //
+// Side effects: a wrapped call that hits does not run the function. A wrapped function
+// with no results runs once per key per TTL: use that to dedupe, or call the function
+// directly if every call must run.
+//
 // Redis or compression: every value passes through encoding/json, at any size. Wrap
 // decodes hits to the declared return type and panics at startup on return types that
 // cannot round-trip: interfaces (including any and map[string]any), unexported fields,

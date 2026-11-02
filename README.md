@@ -293,6 +293,7 @@ func main() {
 ## Limits
 
 - **Memory:** `Get` and `Wrap` return the stored value, not a copy. Do not mutate results.
+- **Side effects:** a wrapped call that hits does not run the function. A wrapped function with no results runs once per key per TTL: use that to dedupe, or call the function directly if every call must run.
 - **Redis or compression:** every value passes through `encoding/json`, at any size. `Wrap` decodes hits to the declared return type and panics at startup on return types that cannot round-trip: interfaces (including `any` and `map[string]any`), unexported fields, `json:"-"`, func, chan, complex, one-way marshalers. For a dynamic shape, return `json.RawMessage`. A value JSON cannot encode (NaN, cycles) is not cached. JSON also loses invalid UTF-8, a time zone's name, and an empty slice or map under `omitempty`.
 - **`Set` and `Get` on those paths are unchecked:** unexported fields are lost, and numbers return as `float64`, losing precision above 2^53.
 - **Redis names:** a name is shared by every process on that Redis and key prefix, and binding is per `Cache`, so services sharing Redis need distinct `KeyPrefix` values. A field added to a return struct under a kept name reads as zero until TTL; bump the name. A field renamed or removed is a miss.
