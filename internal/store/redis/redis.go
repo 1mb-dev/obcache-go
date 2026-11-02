@@ -68,7 +68,7 @@ func New(config *Config) (*Store, error) {
 
 	keyPrefix := config.KeyPrefix
 	if keyPrefix == "" {
-		keyPrefix = "obcache:"
+		keyPrefix = "obcache2:"
 	}
 
 	s := &Store{

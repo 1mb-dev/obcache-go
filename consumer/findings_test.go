@@ -482,3 +482,33 @@ func TestRedisPrefixIsNotAPattern(t *testing.T) {
 		t.Errorf("Clear left %v", c.Keys())
 	}
 }
+
+// Old pods round-trip entries through float64 and their Close wipes the prefix, so
+// a v2.0.x pod and a new pod must not share a namespace during a rollout.
+func TestDefaultPrefixIgnoresOldEntries(t *testing.T) {
+	cfg, mr := miniConfig(t)
+	c := memoryCache(t, cfg)
+	_ = mr.Set("obcache:k", `{"value":"old"}`)
+	if c.Has("k") || len(c.Keys()) != 0 {
+		t.Error("an old entry is visible under the default prefix")
+	}
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if !mr.Exists("obcache:k") {
+		t.Error("Clear reached the old namespace")
+	}
+	_ = c.Set("k", "v", time.Hour)
+	if !mr.Exists("obcache2:k") {
+		t.Errorf("keys = %v", mr.Keys())
+	}
+
+	viaWithRedis, err := obcache.New(obcache.NewDefaultConfig().WithRedis(&obcache.RedisConfig{Client: redisClient(t, mr.Addr())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = viaWithRedis.Close() })
+	if _, ok := viaWithRedis.Get("k"); !ok {
+		t.Error("WithRedis with an empty prefix used a different namespace")
+	}
+}

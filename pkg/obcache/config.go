@@ -39,7 +39,7 @@ type RedisConfig struct {
 	DB int
 
 	// KeyPrefix is prepended to all cache keys
-	// Default: "obcache:"
+	// Default: "obcache2:"
 	KeyPrefix string
 }
 
@@ -161,7 +161,7 @@ func NewRedisConfig(addr string) *Config {
 	config.CleanupInterval = 0 // Redis handles TTL automatically
 	config.Redis = &RedisConfig{
 		Addr:      addr,
-		KeyPrefix: "obcache:",
+		KeyPrefix: "obcache2:",
 	}
 	return config
 }
@@ -174,7 +174,7 @@ func NewRedisConfigWithClient(client redis.Cmdable) *Config {
 	config.CleanupInterval = 0 // Redis handles TTL automatically
 	config.Redis = &RedisConfig{
 		Client:    client,
-		KeyPrefix: "obcache:",
+		KeyPrefix: "obcache2:",
 	}
 	return config
 }

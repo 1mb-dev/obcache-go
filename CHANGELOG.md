@@ -38,6 +38,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - `ValidateWrappableFunction` now reports what `Wrap` refuses: it accepts functions with no results and multi-return functions without an error, and rejects parameter types the default key cannot encode
+- `Wrap` panics on a function with no results: caching it ran it once per key and silently skipped its effects after. `ValidateWrappableFunction` now reports what `Wrap` refuses, and accepts multi-return functions without an error
+- Redis: the default key prefix is `obcache2:`, so a v2.0.x instance and a v2.1.0 instance do not read or wipe each other's entries during a rollout
 
 ## [2.0.0] - 2025-10-27
 
