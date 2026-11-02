@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 	"github.com/1mb-dev/obcache-go/v2/internal/entry"
 	"github.com/1mb-dev/obcache-go/v2/internal/store"
 )
+
+const scanBatch = 1000
+
+var globReplacer = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`)
 
 // Store implements a Redis-backed cache store
 type Store struct {
@@ -130,13 +135,7 @@ func (s *Store) Delete(key string) error {
 
 // Keys returns all keys currently in the store
 func (s *Store) Keys() []string {
-	pattern := s.buildKey("*")
-	result := s.client.Keys(s.ctx, pattern)
-	if result.Err() != nil {
-		return []string{}
-	}
-
-	redisKeys, err := result.Result()
+	redisKeys, err := s.scan()
 	if err != nil {
 		return []string{}
 	}
@@ -151,6 +150,29 @@ func (s *Store) Keys() []string {
 	return cacheKeys
 }
 
+// scan lists this store's keys. The prefix is escaped so it cannot act as a
+// pattern, and results are filtered because SCAN MATCH is the server's reading of
+// it. A key under a longer prefix that starts with this one still belongs here.
+func (s *Store) scan() ([]string, error) {
+	var keys []string
+	iter := s.client.Scan(s.ctx, 0, escapeGlob(s.keyPrefix)+"*", scanBatch).Iterator()
+	for iter.Next(s.ctx) {
+		if strings.HasPrefix(iter.Val(), s.keyPrefix) {
+			keys = append(keys, iter.Val())
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return nil, err
+	}
+	// SCAN may return a key more than once.
+	slices.Sort(keys)
+	return slices.Compact(keys), nil
+}
+
+func escapeGlob(s string) string {
+	return globReplacer.Replace(s)
+}
+
 // Len returns the current number of entries in the store
 func (s *Store) Len() int {
 	return len(s.Keys())
@@ -158,19 +180,15 @@ func (s *Store) Len() int {
 
 // Clear removes all entries from the store
 func (s *Store) Clear() error {
-	pattern := s.buildKey("*")
-	result := s.client.Keys(s.ctx, pattern)
-	if result.Err() != nil {
-		return result.Err()
-	}
-
-	keys, err := result.Result()
+	keys, err := s.scan()
 	if err != nil {
 		return err
 	}
 
-	if len(keys) > 0 {
-		return s.client.Del(s.ctx, keys...).Err()
+	for chunk := range slices.Chunk(keys, scanBatch) {
+		if err := s.client.Del(s.ctx, chunk...).Err(); err != nil {
+			return err
+		}
 	}
 
 	return nil

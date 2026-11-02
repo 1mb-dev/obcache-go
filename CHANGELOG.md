@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Wrapped functions no longer share entries by default: two functions on one cache could return each other's values, or panic on differing return types
 - `New` returns an error for an unknown eviction type instead of silently using LRU
 - Redis: `Close` no longer deletes shared entries, and it closes a client obcache built
+- Redis: key listing and `Clear` use SCAN with an escaped prefix, so a prefix containing a glob character cannot reach another application's keys
 
 ### Security
 

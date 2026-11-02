@@ -461,3 +461,24 @@ func TestFindingK2(t *testing.T) {
 		t.Errorf("distinct slices shared a result: %d", x)
 	}
 }
+
+func TestRedisPrefixIsNotAPattern(t *testing.T) {
+	cfg, mr := miniConfig(t)
+	cfg.Redis.KeyPrefix = "s*:"
+	c := memoryCache(t, cfg)
+	_ = mr.Set("sessions:live", "foreign")
+	_ = c.Set("k", "v", time.Hour)
+
+	if keys := c.Keys(); len(keys) != 1 || keys[0] != "k" {
+		t.Errorf("Keys = %v", keys)
+	}
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if !mr.Exists("sessions:live") {
+		t.Error("Clear deleted a key outside the prefix")
+	}
+	if len(c.Keys()) != 0 {
+		t.Errorf("Clear left %v", c.Keys())
+	}
+}
