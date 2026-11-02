@@ -161,7 +161,15 @@ func typeName(t reflect.Type) string {
 		b.WriteString("struct {")
 		for i := range t.NumField() {
 			f := t.Field(i)
-			b.WriteString(" " + f.Name + " " + typeName(f.Type) + ";")
+			// Tags and embedding make distinct types of identical layout.
+			b.WriteString(" " + f.Name + " " + typeName(f.Type))
+			if f.Anonymous {
+				b.WriteString(" embedded")
+			}
+			if f.Tag != "" {
+				b.WriteString(" " + strconv.Quote(string(f.Tag)))
+			}
+			b.WriteString(";")
 		}
 		b.WriteString(" }")
 		return b.String()

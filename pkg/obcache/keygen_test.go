@@ -335,6 +335,10 @@ func TestTypeNameQualifiesComponents(t *testing.T) {
 		reflect.TypeFor[map[string]embeddedTime](): "map[string]github.com/1mb-dev/obcache-go/v2/pkg/obcache.embeddedTime",
 	}
 	cases[reflect.TypeFor[struct{ At time.Time }]()] = "struct { At time.Time; }"
+	cases[reflect.TypeFor[struct {
+		At time.Time `json:"at"`
+	}]()] = `struct { At time.Time "json:\"at\""; }`
+	cases[reflect.TypeFor[struct{ time.Time }]()] = "struct { Time time.Time embedded; }"
 	for typ, want := range cases {
 		if got := typeName(typ); got != want {
 			t.Errorf("typeName(%v) = %q, want %q", typ, got, want)
