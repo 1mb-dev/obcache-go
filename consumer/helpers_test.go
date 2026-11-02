@@ -96,7 +96,12 @@ func backends() []backend {
 			sum := sha256.Sum256([]byte(t.Name()))
 			cfg := obcache.NewRedisConfigWithClient(redisClient(t, addr))
 			cfg.Redis.KeyPrefix = "consumer-" + hex.EncodeToString(sum[:8]) + ":"
-			return memoryCache(t, cfg)
+			c := memoryCache(t, cfg)
+			// The prefix repeats across runs, and a server can outlive one.
+			if err := c.Clear(); err != nil {
+				t.Fatalf("Clear: %v", err)
+			}
+			return c
 		}})
 	}
 	return all
