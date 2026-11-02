@@ -78,6 +78,10 @@
 // Concurrency: stampede protection is per process. A function with no error return
 // cannot honor a waiter's ctx. OnEvict does not fire on Redis.
 //
+// Outages: a Redis error is a miss, and Wrap drops a failed write; there is no error
+// stat or hook. With Redis down, every call runs the function after waiting on Redis,
+// about a second with a client obcache builds.
+//
 // Operations: a client you pass in needs ContextTimeoutEnabled and its own timeouts, and
 // is the route to TLS. New pings a client it builds; pass a Client to skip that. Stats
 // and Len scan the prefix on Redis. DebugHandler has no authentication.
