@@ -202,13 +202,6 @@ func TestMatrix(t *testing.T) {
 // known suppresses cells for findings not yet fixed.
 func known(t *testing.T, b backend, s shape) {
 	t.Helper()
-	if b.name == redisGzip {
-		suppress(t, "F2")
-	}
-	basic := strings.HasPrefix(s.name, "string/") || strings.HasPrefix(s.name, "bool/") || strings.HasPrefix(s.name, "float64/")
-	if b.serial && !basic {
-		suppress(t, "B4")
-	}
 }
 
 // TestPinnedLosses asserts what JSON cannot carry on serializing backends, so
@@ -219,9 +212,6 @@ func TestPinnedLosses(t *testing.T) {
 			continue
 		}
 		t.Run(b.name, func(t *testing.T) {
-			if b.name == redisGzip {
-				suppress(t, "F2")
-			}
 			t.Run("invalid-utf8", func(t *testing.T) {
 				w := obcache.Wrap(b.new(t), func(int) (string, error) { return "a\xffb", nil }, opts("utf8")...)
 				_, _ = w(1)
@@ -256,7 +246,6 @@ func TestPinnedLosses(t *testing.T) {
 				}
 			})
 			t.Run("zone-name-lost", func(t *testing.T) {
-				suppress(t, "B4")
 				at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.FixedZone("EST", -5*3600))
 				w := obcache.Wrap(b.new(t), func(int) (time.Time, error) { return at, nil }, opts("zone")...)
 				_, _ = w(1)
@@ -269,7 +258,6 @@ func TestPinnedLosses(t *testing.T) {
 				}
 			})
 			t.Run("omitempty-empty-becomes-nil", func(t *testing.T) {
-				suppress(t, "B4")
 				w := obcache.Wrap(b.new(t), func(int) (Sparse, error) {
 					return Sparse{Tags: []string{}}, nil
 				}, opts("omitempty")...)

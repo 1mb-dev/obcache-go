@@ -1,7 +1,9 @@
 package obcache
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/1mb-dev/obcache-go/v2/internal/singleflight"
+	"github.com/1mb-dev/obcache-go/v2/pkg/metrics"
 )
 
 // cachedError represents an error that has been cached
@@ -110,7 +113,12 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 		panic("obcache.Wrap: argument must be a function")
 	}
 
-	keyOf, err := cache.bindKey(fnValue, fnType, opts)
+	// Refusals run before bindKey, which binds a name only once nothing can refuse.
+	err := cache.checkWrap(fnType, opts)
+	var keyOf keyBinding
+	if err == nil {
+		keyOf, err = cache.bindKey(fnValue, fnType, opts)
+	}
 	if err != nil {
 		panic("obcache.Wrap: " + err.Error())
 	}
@@ -182,6 +190,9 @@ func (c *Cache) identity(fnValue reflect.Value, fnType reflect.Type, opts *WrapO
 	if name == "" {
 		if opts.DisableCache {
 			return "", nil
+		}
+		if c.config.StoreType == StoreTypeRedis {
+			return "", errors.New("a Redis cache needs a stable function name: add WithName or WithKeyFunc")
 		}
 		if !isTopLevel(fnName) {
 			return fmt.Sprintf("#%d", c.wrapSeq.Add(1)), nil
@@ -258,6 +269,22 @@ func checkKeyArgs(fnType reflect.Type, args []any) error {
 	return nil
 }
 
+// checkWrap refuses at Wrap what would misbehave on a later cache hit.
+func (c *Cache) checkWrap(fnType reflect.Type, opts *WrapOptions) error {
+	if !c.serializes() || opts.DisableCache {
+		return nil
+	}
+	if opts.CacheErrors {
+		return errors.New("WithErrorCaching needs the memory store without compression: errors do not survive serialization")
+	}
+	for i := range valueCount(fnType) {
+		if err := checkReturn(fnType.Out(i)); err != nil {
+			return fmt.Errorf("return %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
 // executeWrappedFunction handles the core wrapping logic
 func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, keyOf keyBinding, args []reflect.Value) []reflect.Value {
 	// If caching is disabled, call original function directly
@@ -316,10 +343,9 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 	defer cache.stats.decInFlight()
 
 	for aborts := 0; ; aborts++ {
-		if cachedValue, found := cache.GetContext(ctx, key); found {
-			if results, ok := cachedResults(cachedValue, fnType, hasErr); ok {
-				return results
-			}
+		// A retry is the same call: its misses were counted the first time.
+		if results, found := cache.lookup(ctx, key, fnType, hasErr, aborts == 0); found {
+			return results
 		}
 		if aborts == maxAbortRetries {
 			// Queueing behind leaders that keep failing is worse than no cache.
@@ -427,6 +453,104 @@ func storedValue(results []reflect.Value, n int) any {
 	return values
 }
 
+// lookup returns a wrapped function's cached results. Anything that does not read
+// back as this function's results is a miss, counted before it is reported, so the
+// hit rate cannot hide an entry that recomputes on every call.
+func (c *Cache) lookup(ctx context.Context, key string, fnType reflect.Type, hasErr, countMiss bool) ([]reflect.Value, bool) {
+	start := time.Now()
+	defer func() { c.recordCacheOperation(metrics.OperationGet, time.Since(start)) }()
+
+	e, ok := c.store.Get(ctx, key)
+	if !ok {
+		if countMiss {
+			c.miss(ctx, key)
+		}
+		return nil, false
+	}
+
+	var results []reflect.Value
+	raw, serialized, err := c.encoded(e)
+	switch {
+	case err != nil:
+		ok = false
+	case serialized:
+		results, ok = decodeResults(raw, fnType, hasErr)
+	default:
+		results, ok = cachedResults(e.Value, fnType, hasErr)
+	}
+	if !ok {
+		if countMiss {
+			c.stats.incDecodeFailures()
+			c.miss(ctx, key)
+		}
+		return nil, false
+	}
+
+	// Hooks see what the caller is about to receive, in the form a miss stores.
+	// Building it allocates, so only when a hook will read it.
+	var hooked any
+	if c.hooks != nil && c.hooks.hasOnHit() {
+		hooked = e.Value
+		if _, isErr := e.Value.(cachedError); !isErr {
+			hooked = storedValue(results, valueCount(fnType))
+		}
+	}
+	c.hit(ctx, key, hooked)
+	return results, true
+}
+
+// decodeResults decodes stored JSON straight into the declared result types. Going
+// through any would turn every number into a float64 first.
+func decodeResults(raw []byte, fnType reflect.Type, hasErr bool) ([]reflect.Value, bool) {
+	results := emptyResults(fnType, hasErr)
+	n := valueCount(fnType)
+	switch n {
+	case 0:
+		return results, true
+	case 1:
+		return results, decodeResult(raw, fnType.Out(0), results, 0)
+	}
+	var parts []json.RawMessage
+	if json.Unmarshal(raw, &parts) != nil || len(parts) != n {
+		return nil, false
+	}
+	for i := range n {
+		if !decodeResult(parts[i], fnType.Out(i), results, i) {
+			return nil, false
+		}
+	}
+	return results, true
+}
+
+// decodeResult is strict because JSON decoding is lenient: unknown fields and a
+// null for a value type both decode without error, to a zero value that would
+// pass as a hit.
+func decodeResult(raw []byte, t reflect.Type, results []reflect.Value, i int) bool {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Map, reflect.Slice:
+		default:
+			return false
+		}
+	}
+	p := reflect.New(t)
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if dec.Decode(p.Interface()) != nil {
+		return false
+	}
+	results[i] = p.Elem()
+	return true
+}
+
+func emptyResults(fnType reflect.Type, hasErr bool) []reflect.Value {
+	results := make([]reflect.Value, fnType.NumOut())
+	if hasErr {
+		results[len(results)-1] = reflect.Zero(fnType.Out(len(results) - 1))
+	}
+	return results
+}
+
 // cachedResults rebuilds a call's results from a stored value. A value that does
 // not fit the function's results is a miss, never a panic.
 func cachedResults(v any, fnType reflect.Type, hasErr bool) ([]reflect.Value, bool) {
@@ -437,10 +561,7 @@ func cachedResults(v any, fnType reflect.Type, hasErr bool) ([]reflect.Value, bo
 		return createErrorReturn(fnType, ce.Err), true
 	}
 
-	results := make([]reflect.Value, fnType.NumOut())
-	if hasErr {
-		results[len(results)-1] = reflect.Zero(fnType.Out(len(results) - 1))
-	}
+	results := emptyResults(fnType, hasErr)
 	n := valueCount(fnType)
 	if n == 0 {
 		return results, true

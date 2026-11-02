@@ -3,6 +3,7 @@ package obcache
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -44,12 +45,43 @@ type DebugKey struct {
 	TTL       string     `json:"ttl,omitempty"`
 }
 
-// DebugHandler returns an HTTP handler that provides cache debug information
+// DebugOption configures a debug handler.
+type DebugOption func(*debugOptions)
+
+type debugOptions struct {
+	values bool
+}
+
+// WithDebugValues serves full keys and cached values. Keys can hold arguments in
+// clear and values are whatever the cache holds, so serve this only behind your
+// own authentication.
+func WithDebugValues() DebugOption {
+	return func(o *debugOptions) { o.values = true }
+}
+
+// debugKeyName reduces a key to the name of the function that owns it. Only a name
+// this Cache bound qualifies: text before a '|' in a custom key is the caller's data.
+func (c *Cache) debugKeyName(key string) string {
+	if name, _, found := strings.Cut(key, "|"); found {
+		if _, bound := c.names.Load(name); bound {
+			return name
+		}
+	}
+	return "(unnamed)"
+}
+
+// DebugHandler returns an HTTP handler that provides cache debug information. It has
+// no authentication. By default it serves statistics and entry metadata, with keys
+// reduced to the function name; WithDebugValues adds full keys and values.
 // The handler supports the following endpoints:
 //   - GET /stats - Returns only cache statistics (no keys)
-//   - GET /keys - Returns statistics and all cache keys with metadata
-//   - GET / - Returns statistics and all cache keys with metadata (same as /keys)
-func (c *Cache) DebugHandler() http.Handler {
+//   - GET /keys - Returns statistics and all cache entries with metadata
+//   - GET / - Returns statistics and all cache entries with metadata (same as /keys)
+func (c *Cache) DebugHandler(options ...DebugOption) http.Handler {
+	var opts debugOptions
+	for _, option := range options {
+		option(&opts)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -87,11 +119,17 @@ func (c *Cache) DebugHandler() http.Handler {
 			for _, key := range keys {
 				if entry, found := c.store.Get(r.Context(), key); found {
 					debugKey := DebugKey{
-						Key:       key,
-						Value:     entry.Value,
+						Key:       c.debugKeyName(key),
 						ExpiresAt: entry.ExpiresAt,
 						CreatedAt: entry.CreatedAt,
 						Age:       formatDuration(entry.Age()),
+					}
+
+					if opts.values {
+						debugKey.Key = key
+						if value, err := c.decompressValue(entry); err == nil {
+							debugKey.Value = value
+						}
 					}
 
 					if entry.HasExpiry() {
@@ -115,14 +153,15 @@ func (c *Cache) DebugHandler() http.Handler {
 	})
 }
 
-// NewDebugServer creates a new HTTP server with cache debug endpoints
+// NewDebugServer creates a new HTTP server with cache debug endpoints. It has no
+// authentication; see DebugHandler for what it serves.
 // The server serves on the following routes:
 //   - GET /stats - Cache statistics only
 //   - GET /keys - Cache statistics and keys
 //   - GET / - Cache statistics and keys (default)
-func (c *Cache) NewDebugServer(addr string) *http.Server {
+func (c *Cache) NewDebugServer(addr string, options ...DebugOption) *http.Server {
 	mux := http.NewServeMux()
-	handler := c.DebugHandler()
+	handler := c.DebugHandler(options...)
 
 	mux.Handle("/stats", handler)
 	mux.Handle("/keys", handler)

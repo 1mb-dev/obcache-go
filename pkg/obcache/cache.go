@@ -2,8 +2,8 @@ package obcache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -179,6 +179,10 @@ func createRedisStore(config *Config) (store.Store, error) {
 	if config.Redis.Client != nil {
 		redisConfig.Client = config.Redis.Client
 	} else {
+		if config.Redis.Addr == "" {
+			return nil, fmt.Errorf("redis configuration needs Addr or Client; WithRedis replaces what NewRedisConfig set, so assign config.Redis.KeyPrefix instead")
+		}
+
 		// Create Redis client from connection parameters
 		client := redis.NewClient(&redis.Options{
 			Addr:                  config.Redis.Addr,
@@ -194,10 +198,12 @@ func createRedisStore(config *Config) (store.Store, error) {
 		// Test the connection
 		ctx := context.Background()
 		if err := client.Ping(ctx).Err(); err != nil {
+			_ = client.Close() // the Ping error is the one worth reporting
 			return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 		}
 
 		redisConfig.Client = client
+		redisConfig.CloseClient = client.Close
 	}
 
 	return redisstore.New(redisConfig)
@@ -225,6 +231,7 @@ func (c *Cache) GetContext(ctx context.Context, key string) (any, bool) {
 
 	value, err := c.decompressValue(entry)
 	if err != nil {
+		c.stats.incDecodeFailures()
 		c.miss(ctx, key)
 		return nil, false
 	}
@@ -357,109 +364,85 @@ func (c *Cache) updateKeyCount() {
 	c.stats.setKeyCount(count)
 }
 
+// serializes reports whether values pass through JSON on their way to the store.
+func (c *Cache) serializes() bool {
+	return c.config.StoreType == StoreTypeRedis || (c.config.Compression != nil && c.config.Compression.Enabled)
+}
+
 // createCompressedEntry creates a cache entry with compression if applicable
 func (c *Cache) createCompressedEntry(value any, ttl time.Duration) (*entry.Entry, error) {
 	var cacheEntry *entry.Entry
 	if ttl > 0 {
-		cacheEntry = entry.New(nil, ttl) // We'll set the value after compression
+		cacheEntry = entry.New(value, ttl)
 	} else {
-		cacheEntry = entry.NewWithoutTTL(nil)
+		cacheEntry = entry.NewWithoutTTL(value)
 	}
 
-	// Only try compression if it's enabled
-	if c.config.Compression != nil && c.config.Compression.Enabled {
-		// Serialize and compress the value
-		compressed, isCompressed, err := compression.SerializeAndCompress(
-			value,
-			c.compressor,
-			c.config.Compression.MinSize,
-		)
-		if err != nil {
-			return nil, err
-		}
+	if c.config.Compression == nil || !c.config.Compression.Enabled {
+		return cacheEntry, nil
+	}
 
-		if isCompressed {
-			// Store compressed data and metadata
-			cacheEntry.Value = compressed
+	serialized, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize value: %w", err)
+	}
+	cacheEntry.Value = json.RawMessage(serialized)
 
-			// Calculate original size by serializing without compression
-			serialized, _, serErr := compression.SerializeAndCompress(value, compression.NewNoOpCompressor(), 0)
-			originalSize := len(serialized)
-			if serErr != nil {
-				// Fallback to approximate size if serialization fails
-				originalSize = c.approximateSize(value)
-			}
-
-			cacheEntry.SetCompressionInfo(c.compressor.Name(), originalSize, len(compressed))
-		} else {
-			// Store uncompressed data
-			cacheEntry.Value = compressed // This is actually the uncompressed serialized data
-		}
-	} else {
-		// No compression, store value directly
-		cacheEntry.Value = value
+	if len(serialized) < c.config.Compression.MinSize {
+		return cacheEntry, nil
+	}
+	compressed, err := c.compressor.Compress(serialized)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compress value: %w", err)
+	}
+	if len(compressed) < len(serialized) {
+		cacheEntry.Value = compressed
+		cacheEntry.SetCompressionInfo(c.compressor.Name(), len(serialized), len(compressed))
 	}
 
 	return cacheEntry, nil
 }
 
-// decompressValue decompresses a cached value if needed
-func (c *Cache) decompressValue(entry *entry.Entry) (any, error) {
-	// Check if compression was used during storage
-	if c.config.Compression != nil && c.config.Compression.Enabled {
-		// Value was stored with compression logic (might be compressed or serialized)
-		data, ok := entry.Value.([]byte)
-		if !ok {
-			return nil, fmt.Errorf("serialized value is not []byte")
-		}
-
-		var result any
-		err := compression.DecompressAndDeserialize(data, entry.IsCompressed, c.compressor, &result)
-		if err != nil {
-			return nil, fmt.Errorf("failed to deserialize value: %w", err)
-		}
-
-		return result, nil
+// encoded returns an entry's JSON bytes, or serialized=false when the value is held
+// as itself. An entry compressed by anything but this cache's compressor is an
+// error, never bytes passed off as a value.
+func (c *Cache) encoded(e *entry.Entry) (data []byte, serialized bool, err error) {
+	if !c.serializes() {
+		return nil, false, nil
 	}
-	// No compression was configured, return value directly
-	return entry.Value, nil
+	if e.IsCompressed {
+		if e.CompressorName != c.compressor.Name() {
+			return nil, false, fmt.Errorf("entry was compressed with %q", e.CompressorName)
+		}
+		compressed, ok := e.Value.([]byte)
+		if !ok {
+			return nil, false, fmt.Errorf("compressed value is %T", e.Value)
+		}
+		data, err = c.compressor.Decompress(compressed)
+		return data, true, err
+	}
+	raw, ok := e.Value.(json.RawMessage)
+	if !ok {
+		return nil, false, fmt.Errorf("serialized value is %T", e.Value)
+	}
+	return raw, true, nil
 }
 
-// approximateSize estimates the memory size of a value
-func (c *Cache) approximateSize(value any) int {
-	if value == nil {
-		return 0
+// decompressValue returns an entry's value for Get, which has no declared type:
+// on a serializing path, JSON decides it.
+func (c *Cache) decompressValue(e *entry.Entry) (any, error) {
+	raw, serialized, err := c.encoded(e)
+	if err != nil {
+		return nil, err
 	}
-
-	switch v := value.(type) {
-	case string:
-		return len(v)
-	case []byte:
-		return len(v)
-	case int, int8, int16, int32, int64:
-		return 8
-	case uint, uint8, uint16, uint32, uint64:
-		return 8
-	case float32:
-		return 4
-	case float64:
-		return 8
-	case bool:
-		return 1
-	default:
-		// For complex types, use reflection to estimate
-		rv := reflect.ValueOf(value)
-		switch rv.Kind() {
-		case reflect.Slice, reflect.Array:
-			return rv.Len() * 8 // Rough estimate
-		case reflect.Map:
-			return rv.Len() * 16 // Rough estimate for key-value pairs
-		case reflect.Struct:
-			return rv.NumField() * 8 // Rough estimate
-		default:
-			return 64 // Default fallback
-		}
+	if !serialized {
+		return e.Value, nil
 	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("failed to deserialize value: %w", err)
+	}
+	return value, nil
 }
 
 // initializeCompression sets up compression if enabled

@@ -23,6 +23,20 @@ type Stats struct {
 
 	// InFlight is the number of requests currently being processed (singleflight)
 	inFlight int64
+
+	// decodeFailures is the number of stored entries that could not be read back
+	decodeFailures int64
+}
+
+// DecodeFailures returns how many stored entries could not be read back. Each one
+// counts as a miss, so a rising count with a steady hit rate means entries are being
+// recomputed: check for a changed return type under a kept name.
+func (s *Stats) DecodeFailures() int64 {
+	return atomic.LoadInt64(&s.decodeFailures)
+}
+
+func (s *Stats) incDecodeFailures() {
+	atomic.AddInt64(&s.decodeFailures, 1)
 }
 
 // Hits returns the number of cache hits
@@ -81,6 +95,7 @@ func (s *Stats) Reset() {
 	atomic.StoreInt64(&s.invalidations, 0)
 	atomic.StoreInt64(&s.keyCount, 0)
 	atomic.StoreInt64(&s.inFlight, 0)
+	atomic.StoreInt64(&s.decodeFailures, 0)
 }
 
 // Internal methods for updating stats (not exported)

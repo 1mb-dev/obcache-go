@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -325,7 +326,12 @@ func SimpleKeyFunc(args []any) string {
 	return strings.Join(parts, ":")
 }
 
-var textMarshaler = reflect.TypeFor[encoding.TextMarshaler]()
+var (
+	textMarshaler   = reflect.TypeFor[encoding.TextMarshaler]()
+	textUnmarshaler = reflect.TypeFor[encoding.TextUnmarshaler]()
+	jsonMarshaler   = reflect.TypeFor[json.Marshaler]()
+	jsonUnmarshaler = reflect.TypeFor[json.Unmarshaler]()
+)
 
 func implementsEither(t, iface reflect.Type) bool {
 	return t.Implements(iface) || reflect.PointerTo(t).Implements(iface)
@@ -348,34 +354,56 @@ func promotes(t, iface reflect.Type) bool {
 	return false
 }
 
-// walkType refuses types with no faithful encoding. leaf stops the walk at a type
-// that encodes itself.
-func walkType(t reflect.Type, leaf func(reflect.Type) bool, seen map[reflect.Type]bool) error {
+// walkRules decides what a type walk accepts. leaf stops the walk at a type that
+// encodes itself, or refuses it. forJSON adds what JSON alone cannot carry.
+type walkRules struct {
+	leaf    func(reflect.Type) (bool, error)
+	forJSON bool
+}
+
+// walkType refuses types with no faithful encoding.
+func walkType(t reflect.Type, rules walkRules, seen map[reflect.Type]bool) error {
 	if seen[t] {
 		return nil
 	}
 	seen[t] = true
-	if leaf(t) {
-		return nil
+	if done, err := rules.leaf(t); done || err != nil {
+		return err
 	}
-	walk := func(e reflect.Type) error { return walkType(e, leaf, seen) }
 	switch t.Kind() {
 	case reflect.Func, reflect.Chan, reflect.UnsafePointer:
 		return fmt.Errorf("%s has no stable encoding", t)
+	case reflect.Complex64, reflect.Complex128:
+		if rules.forJSON {
+			return fmt.Errorf("%s has no JSON encoding; return a concrete type", t)
+		}
+	case reflect.Interface:
+		if rules.forJSON {
+			return fmt.Errorf("%s does not survive JSON: its concrete type is lost; return a concrete type or json.RawMessage", t)
+		}
 	case reflect.Pointer, reflect.Slice, reflect.Array:
-		return walk(t.Elem())
+		return walkType(t.Elem(), rules, seen)
 	case reflect.Map:
-		if err := walk(t.Key()); err != nil {
+		if rules.forJSON && !jsonMapKey(t.Key()) {
+			return fmt.Errorf("%s has a key JSON cannot encode; return a concrete type", t)
+		}
+		if err := walkType(t.Key(), rules, seen); err != nil {
 			return err
 		}
-		return walk(t.Elem())
+		return walkType(t.Elem(), rules, seen)
 	case reflect.Struct:
 		for i := range t.NumField() {
 			f := t.Field(i)
 			if !f.IsExported() {
+				if rules.forJSON {
+					return fmt.Errorf("%s has unexported field %s, which JSON drops; add MarshalJSON and UnmarshalJSON or return a DTO", t, f.Name)
+				}
 				return fmt.Errorf("%s has unexported field %s", t, f.Name)
 			}
-			if err := walk(f.Type); err != nil {
+			if rules.forJSON && f.Tag.Get("json") == "-" {
+				return fmt.Errorf("%s drops field %s from JSON; add MarshalJSON and UnmarshalJSON or return a DTO", t, f.Name)
+			}
+			if err := walkType(f.Type, rules, seen); err != nil {
 				return err
 			}
 		}
@@ -383,21 +411,58 @@ func walkType(t reflect.Type, leaf func(reflect.Type) bool, seen map[reflect.Typ
 	return nil
 }
 
+func jsonMapKey(k reflect.Type) bool {
+	switch k.Kind() {
+	case reflect.String, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return true
+	}
+	return implementsEither(k, textMarshaler) && implementsEither(k, textUnmarshaler)
+}
+
 // checkParams refuses parameter types the default key would collapse: walking
 // unexported fields of something like *sql.DB reads live state, and skipping them
 // is how distinct arguments came to share a key.
 func checkParams(fnType reflect.Type) error {
-	leaf := func(t reflect.Type) bool {
-		return implementsEither(t, textMarshaler) && !promotes(t, textMarshaler)
-	}
+	rules := walkRules{leaf: func(t reflect.Type) (bool, error) {
+		return implementsEither(t, textMarshaler) && !promotes(t, textMarshaler), nil
+	}}
 	for i := range fnType.NumIn() {
 		in := fnType.In(i)
 		if i == 0 && in == contextType {
 			continue
 		}
-		if err := walkType(in, leaf, map[reflect.Type]bool{}); err != nil {
+		if err := walkType(in, rules, map[reflect.Type]bool{}); err != nil {
 			return fmt.Errorf("parameter %d: %w; use WithKeyFunc", i, err)
 		}
 	}
 	return nil
+}
+
+// checkReturn refuses a return type that would differ between a miss and a hit
+// once it has been through JSON.
+func checkReturn(t reflect.Type) error {
+	return walkType(t, walkRules{leaf: jsonLeaf, forJSON: true}, map[reflect.Type]bool{})
+}
+
+// jsonLeaf accepts a type that encodes and decodes itself. One direction alone
+// decodes to nothing, and a marshaler inherited from an embedded field hides the
+// struct's other fields.
+func jsonLeaf(t reflect.Type) (bool, error) {
+	if t.Kind() == reflect.Interface {
+		return false, nil
+	}
+	for _, pair := range [][2]reflect.Type{{jsonMarshaler, jsonUnmarshaler}, {textMarshaler, textUnmarshaler}} {
+		marshals, unmarshals := implementsEither(t, pair[0]), implementsEither(t, pair[1])
+		if promotes(t, pair[0]) || promotes(t, pair[1]) {
+			return false, fmt.Errorf("%s inherits a marshaler from an embedded field, which hides its other fields; use a named field", t)
+		}
+		if marshals != unmarshals {
+			return false, fmt.Errorf("%s marshals in one direction only; add the missing method or return a DTO", t)
+		}
+		if marshals {
+			return true, nil
+		}
+	}
+	return false, nil
 }

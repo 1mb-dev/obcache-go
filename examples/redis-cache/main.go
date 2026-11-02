@@ -112,6 +112,7 @@ func functionWrappingExample() {
 
 	// Wrap the expensive function with caching
 	cachedGetUser := obcache.Wrap(cache, getUserFromDatabase,
+		obcache.WithName("user"),
 		obcache.WithTTL(5*time.Minute))
 
 	// First call - will execute the function and cache the result

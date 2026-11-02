@@ -19,6 +19,12 @@ All notable changes to this project will be documented in this file.
 - Default cache keys encode every argument in full: `time.Time` values, long slices, large maps and structs with many fields no longer share keys, and `[16]byte` arguments no longer panic
 - Wrapped functions no longer share entries by default: two functions on one cache could return each other's values, or panic on differing return types
 - `New` returns an error for an unknown eviction type instead of silently using LRU
+- Redis: `Close` no longer deletes shared entries, and it closes a client obcache built
+- Redis: key listing and `Clear` use SCAN with an escaped prefix, so a prefix containing a glob character cannot reach another application's keys
+- `Wrap` over Redis or compression decodes a hit into the declared return type, so integers, structs, pointers, slices and multi-return functions no longer panic on a hit, and large integers stay exact
+- Redis with compression now hits: entries record their format, and an entry that cannot be read is a miss rather than a wrong value
+- A compression config with `Level` unset now compresses; level 0 used to store the value uncompressed, larger than plain
+- Decompression is limited to `compression.MaxDecompressedSize`, so a small entry in a shared Redis cannot exhaust memory
 
 ### Security
 
@@ -32,10 +38,16 @@ All notable changes to this project will be documented in this file.
 
 - `WithName` gives a wrapped function a stable identity, and `Cache.Key` returns the key its entry is stored under, for use with `Delete`
 - `EvictionLRU`, `EvictionLFU` and `EvictionFIFO` select an eviction strategy without importing an internal package
+- `Stats.DecodeFailures` counts entries that could not be read back
 
 ### Changed
 
 - `ValidateWrappableFunction` now reports what `Wrap` refuses: it accepts functions with no results and multi-return functions without an error, and rejects parameter types the default key cannot encode
+- `Wrap` panics on a function with no results: caching it ran it once per key and silently skipped its effects after. `ValidateWrappableFunction` now reports what `Wrap` refuses, and accepts multi-return functions without an error
+- Redis: the default key prefix is `obcache2:`, so a v2.0.x instance and a v2.1.0 instance do not read or wipe each other's entries during a rollout
+- On Redis or with compression, `Wrap` panics at startup on return types that cannot round-trip through JSON, and on `WithErrorCaching`. On Redis it also needs `WithName` or `WithKeyFunc`. Each message names the fix
+- `New` returns an error for a Redis config with neither `Addr` nor `Client`; it used to dial localhost. `NewRedisConfig(addr).WithRedis(...)` hits this, because `WithRedis` replaces the config
+- `DebugHandler` no longer serves keys or values by default, because it has no authentication; `WithDebugValues` restores them
 
 ## [2.0.0] - 2025-10-27
 

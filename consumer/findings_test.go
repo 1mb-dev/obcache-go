@@ -2,8 +2,12 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,9 +25,8 @@ import (
 const fallback = "fallback"
 
 func TestFindingB4(t *testing.T) {
-	suppress(t, "B4")
 	for _, b := range backends() {
-		if !b.serial || b.name == redisGzip {
+		if !b.serial {
 			continue
 		}
 		t.Run(b.name, func(t *testing.T) {
@@ -65,7 +68,6 @@ func TestFindingB5(t *testing.T) {
 }
 
 func TestFindingB6(t *testing.T) {
-	suppress(t, "B6")
 	for _, b := range backends() {
 		if !b.serial {
 			continue
@@ -257,7 +259,6 @@ func TestFindingR3(t *testing.T) {
 }
 
 func TestFindingF1(t *testing.T) {
-	suppress(t, "F1")
 	cfg, mr := miniConfig(t)
 	pod := memoryCache(t, cfg)
 	other := memoryCache(t, obcache.NewRedisConfigWithClient(redisClient(t, mr.Addr())))
@@ -271,7 +272,6 @@ func TestFindingF1(t *testing.T) {
 }
 
 func TestFindingF2(t *testing.T) {
-	suppress(t, "F2")
 	cfg, _ := miniConfig(t)
 	c := memoryCache(t, cfg.WithCompression(readmeCompression(compression.CompressorGzip)))
 	var calls atomic.Int32
@@ -288,7 +288,6 @@ func TestFindingF2(t *testing.T) {
 }
 
 func TestFindingF3(t *testing.T) {
-	suppress(t, "F3")
 	_, err := obcache.New(obcache.NewRedisConfig("127.0.0.1:1").WithRedis(&obcache.RedisConfig{KeyPrefix: "x:"}))
 	if err == nil {
 		t.Fatal("New accepted a Redis config with no target")
@@ -370,7 +369,6 @@ func counter(t *testing.T, reg *prometheus.Registry, name string) float64 {
 }
 
 func TestFindingZ1(t *testing.T) {
-	suppress(t, "Z1")
 	storedSize := func(t *testing.T, cfg *obcache.Config, mr *miniredis.Miniredis, value string) int {
 		t.Helper()
 		c := memoryCache(t, cfg)
@@ -460,5 +458,209 @@ func TestFindingK2(t *testing.T) {
 	s := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(v []string) int { return len(v) })
 	if x, y := s([]string{"a,s:b"}), s([]string{"a", "b"}); x == y {
 		t.Errorf("distinct slices shared a result: %d", x)
+	}
+}
+
+func TestRedisPrefixIsNotAPattern(t *testing.T) {
+	cfg, mr := miniConfig(t)
+	cfg.Redis.KeyPrefix = "s*:"
+	c := memoryCache(t, cfg)
+	_ = mr.Set("sessions:live", "foreign")
+	_ = c.Set("k", "v", time.Hour)
+
+	if keys := c.Keys(); len(keys) != 1 || keys[0] != "k" {
+		t.Errorf("Keys = %v", keys)
+	}
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if !mr.Exists("sessions:live") {
+		t.Error("Clear deleted a key outside the prefix")
+	}
+	if len(c.Keys()) != 0 {
+		t.Errorf("Clear left %v", c.Keys())
+	}
+}
+
+// Old pods round-trip entries through float64 and their Close wipes the prefix, so
+// a v2.0.x pod and a new pod must not share a namespace during a rollout.
+func TestDefaultPrefixIgnoresOldEntries(t *testing.T) {
+	cfg, mr := miniConfig(t)
+	c := memoryCache(t, cfg)
+	_ = mr.Set("obcache:k", `{"value":"old"}`)
+	if c.Has("k") || len(c.Keys()) != 0 {
+		t.Error("an old entry is visible under the default prefix")
+	}
+	if err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if !mr.Exists("obcache:k") {
+		t.Error("Clear reached the old namespace")
+	}
+	_ = c.Set("k", "v", time.Hour)
+	if !mr.Exists("obcache2:k") {
+		t.Errorf("keys = %v", mr.Keys())
+	}
+
+	viaWithRedis, err := obcache.New(obcache.NewDefaultConfig().WithRedis(&obcache.RedisConfig{Client: redisClient(t, mr.Addr())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = viaWithRedis.Close() })
+	if _, ok := viaWithRedis.Get("k"); !ok {
+		t.Error("WithRedis with an empty prefix used a different namespace")
+	}
+}
+
+type withPrivate struct {
+	ID int
+	id int
+}
+
+var _ = withPrivate{id: 0}
+
+type withDash struct {
+	Secret string `json:"-"`
+}
+
+type embedsTime struct {
+	time.Time
+	Allowed bool
+}
+
+type oneWay struct{ V int }
+
+func (oneWay) MarshalText() ([]byte, error) { return []byte("x"), nil }
+
+func serializingCaches(t *testing.T) map[string]*obcache.Cache {
+	t.Helper()
+	cfg, _ := miniConfig(t)
+	return map[string]*obcache.Cache{
+		"redis": memoryCache(t, cfg),
+		"gzip":  memoryCache(t, obcache.NewDefaultConfig().WithCompression(readmeCompression(compression.CompressorGzip))),
+	}
+}
+
+func TestFindingRF1(t *testing.T) {
+	refuses := func(t *testing.T, want string, wrap func()) {
+		t.Helper()
+		mustPanic(t, want, wrap)
+	}
+	for name, c := range serializingCaches(t) {
+		n := name
+		t.Run(n, func(t *testing.T) {
+			refuses(t, "json.RawMessage", func() { obcache.Wrap(c, func(int) (any, error) { return nil, nil }, opts("a")...) })
+			refuses(t, "json.RawMessage", func() { obcache.Wrap(c, func(int) map[string]any { return nil }, opts("b")...) })
+			refuses(t, "field id, which JSON drops", func() { obcache.Wrap(c, func(int) withPrivate { return withPrivate{} }, opts("c")...) })
+			refuses(t, "drops field Secret", func() { obcache.Wrap(c, func(int) withDash { return withDash{} }, opts("d")...) })
+			refuses(t, "no stable encoding", func() { obcache.Wrap(c, func(int) func() { return nil }, opts("e")...) })
+			refuses(t, "no stable encoding", func() { obcache.Wrap(c, func(int) chan int { return nil }, opts("f")...) })
+			refuses(t, "no JSON encoding", func() { obcache.Wrap(c, func(int) complex128 { return 0 }, opts("g")...) })
+			refuses(t, "key JSON cannot encode", func() { obcache.Wrap(c, func(int) map[bool]string { return nil }, opts("h")...) })
+			refuses(t, "one direction", func() { obcache.Wrap(c, func(int) oneWay { return oneWay{} }, opts("i")...) })
+			refuses(t, "embedded field", func() { obcache.Wrap(c, func(int) embedsTime { return embedsTime{} }, opts("j")...) })
+			refuses(t, "embedded field", func() { obcache.Wrap(c, func(int) *embedsTime { return nil }, opts("k")...) })
+
+			obcache.Wrap(c, func(int) (any, error) { return nil, nil }, obcache.WithoutCache())
+			obcache.Wrap(c, func(int) json.RawMessage { return nil }, opts("raw")...)
+		})
+	}
+	t.Run("Redis needs an identity", func(t *testing.T) {
+		cfg, _ := miniConfig(t)
+		c := memoryCache(t, cfg)
+		refuses(t, "add WithName or WithKeyFunc", func() { obcache.Wrap(c, lookupUser) })
+		obcache.Wrap(c, lookupUser, obcache.WithKeyFunc(func([]any) string { return "k" }))
+		obcache.Wrap(c, lookupOrder, obcache.WithoutCache())
+	})
+	t.Run("memory is unaffected", func(t *testing.T) {
+		c := memoryCache(t, obcache.NewDefaultConfig())
+		obcache.Wrap(c, func(int) (any, error) { return nil, nil })
+		obcache.Wrap(c, func(int) withPrivate { return withPrivate{} })
+		obcache.Wrap(c, lookupUser)
+	})
+}
+
+func TestFindingPC1(t *testing.T) {
+	mr := miniredis.RunT(t)
+	mr.RequireAuth("secret")
+	if _, err := obcache.New(obcache.NewRedisConfig(mr.Addr())); err == nil {
+		t.Fatal("New accepted a server that refused the ping")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for mr.CurrentConnectionCount() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d connections left open by a failed New", mr.CurrentConnectionCount())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestFindingD1(t *testing.T) {
+	fetch := func(t *testing.T, h http.Handler) string {
+		t.Helper()
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		res, err := http.Get(srv.URL + "/keys")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = res.Body.Close() }()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+	for _, b := range backends() {
+		t.Run(b.name, func(t *testing.T) {
+			c := b.new(t)
+			w := obcache.Wrap(c, func(string) (string, error) { return "ssn=123", nil }, opts("profile")...)
+			_, _ = w("sk_live_abcdef")
+
+			body := fetch(t, c.DebugHandler())
+			if strings.Contains(body, "sk_live") || strings.Contains(body, "ssn=123") {
+				t.Errorf("default debug response exposed a key or value: %s", body)
+			}
+			if !strings.Contains(body, "profile") || !strings.Contains(body, "createdAt") {
+				t.Errorf("default debug response lost its metadata: %s", body)
+			}
+
+			custom := b.new(t)
+			k := obcache.Wrap(custom, func(string) (string, error) { return "v", nil },
+				obcache.WithKeyFunc(func(args []any) string { return args[0].(string) + "|session" }))
+			_, _ = k("sk_live_abcdef")
+			if got := fetch(t, custom.DebugHandler()); strings.Contains(got, "sk_live") {
+				t.Errorf("a custom key leaked through the name part: %s", got)
+			}
+			full := fetch(t, c.DebugHandler(obcache.WithDebugValues()))
+			if !strings.Contains(full, "sk_live") || !strings.Contains(full, "ssn=123") {
+				t.Errorf("WithDebugValues response: %s", full)
+			}
+		})
+	}
+}
+
+func TestRefusedReturnLeavesNoName(t *testing.T) {
+	for name, c := range serializingCaches(t) {
+		t.Run(name, func(t *testing.T) {
+			mustPanic(t, "which JSON drops", func() {
+				obcache.Wrap(c, func(int) withPrivate { return withPrivate{} }, obcache.WithName("report"))
+			})
+			obcache.Wrap(c, func(int) string { return "" }, obcache.WithName("report"))
+		})
+	}
+}
+
+func TestHitWithoutHooksDoesNotBuildHookValue(t *testing.T) {
+	measure := func(hooks *obcache.Hooks) float64 {
+		c := memoryCache(t, obcache.NewDefaultConfig().WithHooks(hooks))
+		w := obcache.Wrap(c, func(int) (string, int, error) { return "a", 1, nil }, opts("multi")...)
+		_, _, _ = w(1)
+		return testing.AllocsPerRun(100, func() { _, _, _ = w(1) })
+	}
+	listening := obcache.NewHooks()
+	listening.AddOnHit(func(context.Context, string, any) {})
+	if quiet, loud := measure(obcache.NewHooks()), measure(listening); quiet >= loud {
+		t.Errorf("allocs per hit: %v without a hook, %v with one", quiet, loud)
 	}
 }

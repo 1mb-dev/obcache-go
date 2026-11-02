@@ -6,6 +6,7 @@ package consumer
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -90,7 +91,9 @@ func backends() []backend {
 	}
 	if addr := os.Getenv("OBCACHE_TEST_REDIS"); addr != "" {
 		all = append(all, backend{name: "real-redis", serial: true, redis: true, new: func(t *testing.T) *obcache.Cache {
-			sum := sha256.Sum256([]byte(t.Name()))
+			// One server serves every cache, and a test may build several, so each
+			// gets its own namespace.
+			sum := sha256.Sum256([]byte(fmt.Sprintf("%s#%d", t.Name(), realRedisCaches.Add(1))))
 			cfg := obcache.NewRedisConfigWithClient(redisClient(t, addr))
 			cfg.Redis.KeyPrefix = "consumer-" + hex.EncodeToString(sum[:8]) + ":"
 			c := memoryCache(t, cfg)
@@ -103,6 +106,8 @@ func backends() []backend {
 	}
 	return all
 }
+
+var realRedisCaches atomic.Int64
 
 // bounded fails the test if f does not return in time, so a hang reports as a
 // failure instead of killing the binary at -timeout.
