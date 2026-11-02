@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -160,7 +161,6 @@ func TestFindingB3(t *testing.T) {
 }
 
 func TestFindingC1(t *testing.T) {
-	suppress(t, "C1")
 	synctest.Test(t, func(t *testing.T) {
 		c := bubbleCache(t)
 		w := obcache.Wrap(c, func(ctx context.Context, _ int) (string, error) {
@@ -190,7 +190,6 @@ func TestFindingC1(t *testing.T) {
 }
 
 func TestFindingC2(t *testing.T) {
-	suppress(t, "C2")
 	c := memoryCache(t, obcache.NewDefaultConfig())
 	o := append(opts("poison"), obcache.WithErrorCaching())
 	w := obcache.Wrap(c, func(ctx context.Context, _ int) (string, error) {
@@ -234,4 +233,25 @@ func TestSlowOriginStillCached(t *testing.T) {
 	if n := len(mr.Keys()); n != 1 {
 		t.Errorf("stored keys = %d, want 1", n)
 	}
+}
+
+func TestFindingCTX1(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		w := obcache.Wrap(c, func(context.Context, int) (string, error) {
+			time.Sleep(time.Second)
+			return "v", nil
+		}, opts("wait")...)
+
+		var wg sync.WaitGroup
+		wg.Go(func() { _, _ = w(context.Background(), 1) })
+		time.Sleep(time.Millisecond)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		if _, err := w(ctx, 1); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("waiter err = %v", err)
+		}
+		wg.Wait()
+	})
 }

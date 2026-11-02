@@ -2,9 +2,12 @@ package obcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
+
+	"github.com/1mb-dev/obcache-go/v2/internal/singleflight"
 )
 
 // cachedError represents an error that has been cached
@@ -113,8 +116,9 @@ const maxAbortRetries = 2
 
 // flight is what a singleflight leader shares with its waiters.
 type flight struct {
-	value any
-	err   error
+	value         any
+	err           error
+	leaderCtxDone bool
 }
 
 // executeWrappedFunction handles the core wrapping logic
@@ -139,6 +143,10 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 	compute := func() flight {
 		value, err := processResults(fnValue.Call(args), hasErrorReturn)
 		if err != nil {
+			if ctx.Err() != nil {
+				// The leader's own cancellation, whatever the function wrapped it in.
+				return flight{err: err, leaderCtxDone: true}
+			}
 			if opts.CacheErrors {
 				errorTTL := opts.ErrorTTL
 				if errorTTL == 0 {
@@ -152,33 +160,40 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 		return flight{value: value}
 	}
 
+	finish := func(f flight) []reflect.Value {
+		if f.err != nil {
+			return createErrorReturn(fnType, f.err)
+		}
+		return convertComputedValue(f.value, fnType, hasErrorReturn)
+	}
+
+	waitCtx := ctx
+	if !hasErrorReturn {
+		waitCtx = context.Background() // no error slot to report a wait timeout through
+	}
+
 	cache.stats.incInFlight()
 	defer cache.stats.decInFlight()
 
-	var f flight
 	for aborts := 0; ; aborts++ {
 		if cachedValue, found := cache.GetContext(ctx, key); found {
 			return convertCachedValue(cachedValue, fnType, hasErrorReturn)
 		}
 		if aborts == maxAbortRetries {
 			// Queueing behind leaders that keep failing is worse than no cache.
-			f = compute()
-			break
+			return finish(compute())
 		}
-		var err error
-		f, _, err = cache.sf.Do(context.Background(), key, compute)
-		if err == nil {
-			break
+		f, leader, err := cache.sf.Do(waitCtx, key, compute)
+		switch {
+		case errors.Is(err, singleflight.ErrAborted):
+			continue
+		case err != nil:
+			return createErrorReturn(fnType, err)
+		case f.leaderCtxDone && !leader && ctx.Err() == nil:
+			continue
 		}
+		return finish(f)
 	}
-
-	if f.err != nil {
-		// Return the error in the function's expected format
-		return createErrorReturn(fnType, f.err)
-	}
-
-	// Convert the result back to the expected format
-	return convertComputedValue(f.value, fnType, hasErrorReturn)
 }
 
 // extractContextAndArgs extracts context and key args from function arguments
