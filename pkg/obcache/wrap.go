@@ -154,36 +154,43 @@ func hasErrorReturn(fnType reflect.Type) bool {
 		fnType.Out(fnType.NumOut()-1).Implements(reflect.TypeOf((*error)(nil)).Elem())
 }
 
+// writeBudget bounds the store write after a call. The computed value outlives its
+// caller's deadline, and waiters sit behind this write, so it gets its own limit.
+const writeBudget = 250 * time.Millisecond
+
 // executeFunctionWithSingleflight executes the function with singleflight pattern
 func executeFunctionWithSingleflight(cache *Cache, ctx context.Context, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value, key string, hasErrorReturn bool) []reflect.Value {
-	// Use singleflight to prevent duplicate calls
+	store := func(value any, ttl time.Duration) {
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeBudget)
+		defer cancel()
+		_ = cache.SetContext(writeCtx, key, value, ttl)
+	}
+
+	// The write happens here so it runs exactly once, whether or not anyone is waiting.
 	compute := func() (any, error) {
-		results := fnValue.Call(args)
-		return processResults(results, hasErrorReturn)
+		value, err := processResults(fnValue.Call(args), hasErrorReturn)
+		if err != nil {
+			if opts.CacheErrors {
+				errorTTL := opts.ErrorTTL
+				if errorTTL == 0 {
+					errorTTL = opts.TTL
+				}
+				store(cachedError{Err: err}, errorTTL)
+			}
+			return nil, err
+		}
+		store(value, opts.TTL)
+		return value, nil
 	}
 
 	// Execute with singleflight
 	cache.stats.incInFlight()
 	defer cache.stats.decInFlight()
 
-	value, err, shared := cache.sf.Do(key, compute)
-
+	value, err, _ := cache.sf.Do(key, compute)
 	if err != nil {
-		// Cache errors if enabled
-		if opts.CacheErrors && !shared {
-			errorTTL := opts.ErrorTTL
-			if errorTTL == 0 {
-				errorTTL = opts.TTL
-			}
-			_ = cache.SetContext(ctx, key, cachedError{Err: err}, errorTTL) // Cache error with context
-		}
 		// Return the error in the function's expected format
 		return createErrorReturn(fnType, err)
-	}
-
-	// Store in cache if this wasn't a shared call
-	if !shared {
-		_ = cache.SetContext(ctx, key, value, opts.TTL) // Cache result with context
 	}
 
 	// Convert the result back to the expected format

@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Redis: `GetContext`, `SetContext` and wrapped calls honor context deadlines, and a client obcache builds uses short timeouts, so a hung server no longer stalls callers for seconds
 - A write to Redis or a hook no longer runs under a cache-wide lock: `Set` issues one command instead of scanning every key, and hooks may call back into the cache
 - `Close` can be called more than once
+- A wrapped call's result is cached after a concurrent miss, and after the caller's deadline passes
 
 ## [2.0.0] - 2025-10-27
 

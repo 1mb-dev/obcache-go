@@ -77,7 +77,6 @@ func TestFindingB2(t *testing.T) {
 }
 
 func TestFindingB3(t *testing.T) {
-	suppress(t, "B3")
 	synctest.Test(t, func(t *testing.T) {
 		c := bubbleCache(t)
 		var calls atomic.Int32
@@ -149,5 +148,33 @@ func TestFindingC2(t *testing.T) {
 	_, _ = w(dead, 1)
 	if v, err := w(context.Background(), 1); v != "ok" || err != nil {
 		t.Errorf("live caller = %q, %v", v, err)
+	}
+}
+
+// A leader whose deadline passes during a slow call still caches the result, or a
+// slow origin is never cached at all.
+func TestSlowOriginStillCached(t *testing.T) {
+	cfg, mr := miniConfig(t)
+	c := memoryCache(t, cfg)
+	var calls atomic.Int32
+	w := obcache.Wrap(c, func(context.Context, int) (string, error) {
+		calls.Add(1)
+		time.Sleep(100 * time.Millisecond)
+		return "v", nil
+	}, opts("slow")...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if v, err := w(ctx, 1); v != "v" || err != nil {
+		t.Fatalf("slow call = %q, %v", v, err)
+	}
+	if v, err := w(context.Background(), 1); v != "v" || err != nil {
+		t.Fatalf("second call = %q, %v", v, err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("underlying calls = %d, want 1", n)
+	}
+	if n := len(mr.Keys()); n != 1 {
+		t.Errorf("stored keys = %d, want 1", n)
 	}
 }
