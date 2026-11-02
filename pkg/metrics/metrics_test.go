@@ -116,9 +116,6 @@ func TestNewDefaultConfig(t *testing.T) {
 	if config.IncludeDetailedTimings {
 		t.Error("Expected IncludeDetailedTimings to be false")
 	}
-	if config.IncludeKeyValueSizes {
-		t.Error("Expected IncludeKeyValueSizes to be false")
-	}
 }
 
 func TestConfigBuilder(t *testing.T) {
@@ -128,8 +125,7 @@ func TestConfigBuilder(t *testing.T) {
 		WithNamespace("myapp").
 		WithLabels(labels).
 		WithReportingInterval(60 * time.Second).
-		WithDetailedTimings(true).
-		WithKeyValueSizes(true)
+		WithDetailedTimings(true)
 
 	if config.Namespace != "myapp" {
 		t.Errorf("Expected namespace 'myapp', got %s", config.Namespace)
@@ -145,9 +141,6 @@ func TestConfigBuilder(t *testing.T) {
 	}
 	if !config.IncludeDetailedTimings {
 		t.Error("Expected IncludeDetailedTimings to be true")
-	}
-	if !config.IncludeKeyValueSizes {
-		t.Error("Expected IncludeKeyValueSizes to be true")
 	}
 }
 
