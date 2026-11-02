@@ -358,6 +358,11 @@ func (c *Cache) updateKeyCount() {
 	c.stats.setKeyCount(count)
 }
 
+// serializes reports whether values pass through JSON on their way to the store.
+func (c *Cache) serializes() bool {
+	return c.config.StoreType == StoreTypeRedis || (c.config.Compression != nil && c.config.Compression.Enabled)
+}
+
 // createCompressedEntry creates a cache entry with compression if applicable
 func (c *Cache) createCompressedEntry(value any, ttl time.Duration) (*entry.Entry, error) {
 	var cacheEntry *entry.Entry

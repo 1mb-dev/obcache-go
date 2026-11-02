@@ -223,7 +223,7 @@ func TestRedisConfigBuilders(t *testing.T) {
 		t.Fatalf("Expected Redis addr 'localhost:6379', got '%s'", config1.Redis.Addr)
 	}
 	if config1.Redis.KeyPrefix != "obcache2:" {
-		t.Fatalf("Expected default key prefix 'obcache:', got '%s'", config1.Redis.KeyPrefix)
+		t.Fatalf("Expected default key prefix 'obcache2:', got '%s'", config1.Redis.KeyPrefix)
 	}
 
 	// Test configuration chaining

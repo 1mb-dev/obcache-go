@@ -111,6 +111,9 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 	}
 
 	keyOf, err := cache.bindKey(fnValue, fnType, opts)
+	if err == nil {
+		err = cache.checkWrap(fnType, opts)
+	}
 	if err != nil {
 		panic("obcache.Wrap: " + err.Error())
 	}
@@ -183,6 +186,9 @@ func (c *Cache) identity(fnValue reflect.Value, fnType reflect.Type, opts *WrapO
 		if opts.DisableCache {
 			return "", nil
 		}
+		if c.config.StoreType == StoreTypeRedis {
+			return "", errors.New("Redis needs a stable function name: add WithName or WithKeyFunc")
+		}
 		if !isTopLevel(fnName) {
 			return fmt.Sprintf("#%d", c.wrapSeq.Add(1)), nil
 		}
@@ -253,6 +259,22 @@ func checkKeyArgs(fnType reflect.Type, args []any) error {
 		}
 		if got := reflect.TypeOf(arg); got != want {
 			return fmt.Errorf("arg %d is %v, the wrapped function takes %v", i, got, want)
+		}
+	}
+	return nil
+}
+
+// checkWrap refuses at Wrap what would misbehave on a later cache hit.
+func (c *Cache) checkWrap(fnType reflect.Type, opts *WrapOptions) error {
+	if !c.serializes() || opts.DisableCache {
+		return nil
+	}
+	if opts.CacheErrors {
+		return errors.New("WithErrorCaching needs the memory store without compression: errors do not survive serialization")
+	}
+	for i := range valueCount(fnType) {
+		if err := checkReturn(fnType.Out(i)); err != nil {
+			return fmt.Errorf("return %d: %w", i, err)
 		}
 	}
 	return nil

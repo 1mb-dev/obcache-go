@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -65,7 +66,6 @@ func TestFindingB5(t *testing.T) {
 }
 
 func TestFindingB6(t *testing.T) {
-	suppress(t, "B6")
 	for _, b := range backends() {
 		if !b.serial {
 			continue
@@ -511,4 +511,67 @@ func TestDefaultPrefixIgnoresOldEntries(t *testing.T) {
 	if _, ok := viaWithRedis.Get("k"); !ok {
 		t.Error("WithRedis with an empty prefix used a different namespace")
 	}
+}
+
+type withPrivate struct{ id int }
+
+type withDash struct {
+	Secret string `json:"-"`
+}
+
+type embedsTime struct {
+	time.Time
+	Allowed bool
+}
+
+type oneWay struct{ V int }
+
+func (oneWay) MarshalText() ([]byte, error) { return []byte("x"), nil }
+
+func serializingCaches(t *testing.T) map[string]*obcache.Cache {
+	t.Helper()
+	cfg, _ := miniConfig(t)
+	return map[string]*obcache.Cache{
+		"redis": memoryCache(t, cfg),
+		"gzip":  memoryCache(t, obcache.NewDefaultConfig().WithCompression(readmeCompression(compression.CompressorGzip))),
+	}
+}
+
+func TestFindingRF1(t *testing.T) {
+	refuses := func(t *testing.T, want string, wrap func()) {
+		t.Helper()
+		mustPanic(t, want, wrap)
+	}
+	for name, c := range serializingCaches(t) {
+		n := name
+		t.Run(n, func(t *testing.T) {
+			refuses(t, "json.RawMessage", func() { obcache.Wrap(c, func(int) (any, error) { return nil, nil }, opts("a")...) })
+			refuses(t, "json.RawMessage", func() { obcache.Wrap(c, func(int) map[string]any { return nil }, opts("b")...) })
+			refuses(t, "field id, which JSON drops", func() { obcache.Wrap(c, func(int) withPrivate { return withPrivate{} }, opts("c")...) })
+			refuses(t, "drops field Secret", func() { obcache.Wrap(c, func(int) withDash { return withDash{} }, opts("d")...) })
+			refuses(t, "no stable encoding", func() { obcache.Wrap(c, func(int) func() { return nil }, opts("e")...) })
+			refuses(t, "no stable encoding", func() { obcache.Wrap(c, func(int) chan int { return nil }, opts("f")...) })
+			refuses(t, "no JSON encoding", func() { obcache.Wrap(c, func(int) complex128 { return 0 }, opts("g")...) })
+			refuses(t, "key JSON cannot encode", func() { obcache.Wrap(c, func(int) map[bool]string { return nil }, opts("h")...) })
+			refuses(t, "one direction", func() { obcache.Wrap(c, func(int) oneWay { return oneWay{} }, opts("i")...) })
+			refuses(t, "embedded field", func() { obcache.Wrap(c, func(int) embedsTime { return embedsTime{} }, opts("j")...) })
+			refuses(t, "embedded field", func() { obcache.Wrap(c, func(int) *embedsTime { return nil }, opts("k")...) })
+
+			obcache.Wrap(c, func(int) (any, error) { return nil, nil }, obcache.WithoutCache())
+			obcache.Wrap(c, func(int) json.RawMessage { return nil }, opts("raw")...)
+		})
+	}
+	t.Run("Redis needs an identity", func(t *testing.T) {
+		cfg, _ := miniConfig(t)
+		c := memoryCache(t, cfg)
+		refuses(t, "add WithName or WithKeyFunc", func() { obcache.Wrap(c, lookupUser) })
+		obcache.Wrap(c, lookupUser, obcache.WithKeyFunc(func([]any) string { return "k" }))
+		obcache.Wrap(c, lookupOrder, obcache.WithoutCache())
+	})
+	t.Run("memory is unaffected", func(t *testing.T) {
+		c := memoryCache(t, obcache.NewDefaultConfig())
+		obcache.Wrap(c, func(int) (any, error) { return nil, nil })
+		obcache.Wrap(c, func(int) withPrivate { return withPrivate{} })
+		obcache.Wrap(c, lookupUser)
+	})
 }
