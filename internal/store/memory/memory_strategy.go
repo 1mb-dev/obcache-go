@@ -60,12 +60,18 @@ func (s *StrategyStore) Get(_ context.Context, key string) (*entry.Entry, bool) 
 	if entry.IsExpired() {
 		// Remove expired entry (do this in a separate goroutine to avoid deadlock)
 		go func() {
+			// The key may hold a fresh entry by the time this runs.
 			s.mutex.Lock()
-			s.strategy.Remove(key)
+			current, found := s.strategy.Peek(key)
+			stale := found && current == entry
+			if stale {
+				s.strategy.Remove(key)
+			}
+			callback := s.cleanupCallback
 			s.mutex.Unlock()
 
-			if s.cleanupCallback != nil {
-				s.cleanupCallback(key, entry.Value)
+			if stale && callback != nil {
+				callback(key, entry.Value)
 			}
 		}()
 		return nil, false
