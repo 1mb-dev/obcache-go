@@ -46,6 +46,10 @@ jobs:
           cache-dependency-path: consumer/go.sum
       - name: Keep Prometheus out of pkg/obcache
         run: "! go list -deps ./pkg/obcache | grep prometheus"
+      - name: Build the nested example modules
+        run: |
+          (cd examples/gin-web-server && go build -o /dev/null ./...)
+          (cd examples/prometheus && go build -o /dev/null ./...)
       - name: Test from outside the module
         working-directory: consumer
         env:
