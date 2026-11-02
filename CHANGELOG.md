@@ -53,6 +53,7 @@ Some 2.0.x code now panics at `Wrap` or errors at `New`. Each message names the 
 
 ### Fixed
 
+- Memory store: reading an expired entry no longer removes a fresh entry written under the same key a moment later
 - Redis: concurrent `Set` with `Keys`, `Len` or `Stats` no longer deadlocks
 - Redis: a cache hit no longer writes the entry back, which could restore a key another instance deleted
 - Redis: `GetContext`, `SetContext` and wrapped calls honor context deadlines, and a client obcache builds uses short timeouts, so a hung server no longer stalls callers for seconds
