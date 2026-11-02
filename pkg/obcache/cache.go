@@ -49,6 +49,9 @@ type Cache struct {
 	metricsLabels   metrics.Labels
 	metricsStop     chan struct{}
 	metricsWg       sync.WaitGroup
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New creates a new Cache instance with the given configuration
@@ -316,14 +319,17 @@ func (c *Cache) TTL(key string) (time.Duration, bool) {
 
 // Close closes the cache and cleans up resources
 func (c *Cache) Close() error {
-	if c.metricsStop != nil {
-		close(c.metricsStop)
-		c.metricsWg.Wait()
-	}
-	if c.metricsExporter != nil {
-		_ = c.metricsExporter.Close() // Ignore error on shutdown
-	}
-	return c.store.Close()
+	c.closeOnce.Do(func() {
+		if c.metricsStop != nil {
+			close(c.metricsStop)
+			c.metricsWg.Wait()
+		}
+		if c.metricsExporter != nil {
+			_ = c.metricsExporter.Close() // Ignore error on shutdown
+		}
+		c.closeErr = c.store.Close()
+	})
+	return c.closeErr
 }
 
 // Cleanup removes expired entries and returns count removed

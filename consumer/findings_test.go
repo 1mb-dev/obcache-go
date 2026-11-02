@@ -80,7 +80,6 @@ func TestFindingB6(t *testing.T) {
 }
 
 func TestFindingB7(t *testing.T) {
-	suppress(t, "B7")
 	c, err := obcache.New(obcache.NewDefaultConfig())
 	if err != nil {
 		t.Fatal(err)
