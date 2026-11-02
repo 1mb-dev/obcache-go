@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - A waiter stops waiting when its own context ends
 - `Wrap` handles a nil value in an interface return, functions returning only `error`, and variadic functions
 - Default cache keys encode every argument in full: `time.Time` values, long slices, large maps and structs with many fields no longer share keys, and `[16]byte` arguments no longer panic
+- Wrapped functions no longer share entries by default: two functions on one cache could return each other's values, or panic on differing return types
 
 ### Security
 
@@ -25,6 +26,10 @@ All notable changes to this project will be documented in this file.
 ### Deprecated
 
 - `SimpleKeyFunc` is not injective; use `DefaultKeyFunc`
+
+### Added
+
+- `WithName` gives a wrapped function a stable identity, and `Cache.Key` returns the key its entry is stored under, for use with `Delete`
 
 ## [2.0.0] - 2025-10-27
 

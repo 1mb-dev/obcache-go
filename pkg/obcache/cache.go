@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -52,6 +53,10 @@ type Cache struct {
 
 	closeOnce sync.Once
 	closeErr  error
+
+	// Function identity
+	names   sync.Map // name -> nameBinding
+	wrapSeq atomic.Uint64
 }
 
 // New creates a new Cache instance with the given configuration

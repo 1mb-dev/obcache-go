@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/1mb-dev/obcache-go/v2/internal/singleflight"
@@ -22,6 +24,9 @@ type WrapOptions struct {
 
 	// KeyFunc overrides the default key generation function
 	KeyFunc KeyGenFunc
+
+	// Name is the wrapped function's stable identity within the cache
+	Name string
 
 	// DisableCache disables caching for this function (useful for testing)
 	DisableCache bool
@@ -48,6 +53,16 @@ func WithTTL(ttl time.Duration) WrapOption {
 func WithKeyFunc(keyFunc KeyGenFunc) WrapOption {
 	return func(opts *WrapOptions) {
 		opts.KeyFunc = keyFunc
+	}
+}
+
+// WithName names the wrapped function: its entries are keyed "name|args". A name
+// binds one Wrap, and only a top-level function may Wrap under it again, so a
+// closure or method value is wrapped once, at setup. For a per-request Wrap, use
+// WithKeyFunc. A name must not contain '|' or '#'.
+func WithName(name string) WrapOption {
+	return func(opts *WrapOptions) {
+		opts.Name = name
 	}
 }
 
@@ -95,7 +110,7 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 		panic("obcache.Wrap: argument must be a function")
 	}
 
-	keyOf, err := cache.bindKey(fnType, opts)
+	keyOf, err := cache.bindKey(fnValue, fnType, opts)
 	if err != nil {
 		panic("obcache.Wrap: " + err.Error())
 	}
@@ -125,24 +140,120 @@ type flight struct {
 // keyBinding turns a call's arguments into a key, or reports that they have none.
 type keyBinding func(args []any) (string, bool)
 
-// bindKey resolves how a wrapped function keys its calls, once, at Wrap time.
-func (c *Cache) bindKey(fnType reflect.Type, opts *WrapOptions) (keyBinding, error) {
+type nameBinding struct {
+	pc uintptr
+	t  reflect.Type
+}
+
+// bindKey resolves the function's identity once, at Wrap time. Failure is loud or
+// cold, never a read of another function's entries.
+func (c *Cache) bindKey(fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions) (keyBinding, error) {
 	if opts.KeyFunc != nil {
+		if opts.Name != "" {
+			return nil, errors.New("WithName and WithKeyFunc are mutually exclusive")
+		}
 		return func(args []any) (string, bool) { return opts.KeyFunc(args), true }, nil
 	}
-	if custom := c.config.KeyGenFunc; custom != nil {
-		return func(args []any) (string, bool) { return custom(args), true }, nil
-	}
-	if opts.DisableCache {
-		return nil, nil
-	}
-	if err := checkParams(fnType); err != nil {
+
+	name, err := c.identity(fnValue, fnType, opts)
+	if err != nil {
 		return nil, err
 	}
-	return func(args []any) (string, bool) {
-		key, err := encodeArgs(args)
-		return key, err == nil
-	}, nil
+	if opts.DisableCache {
+		return nil, nil // nothing is keyed or stored
+	}
+	if c.config.KeyGenFunc == nil {
+		if err := checkParams(fnType); err != nil {
+			return nil, err
+		}
+	}
+	return func(args []any) (string, bool) { return c.keyFor(name, args) }, nil
+}
+
+// identity returns the name a wrapped function keys under, binding it if it is
+// stable. A name that cannot be trusted across Wraps gets a fresh id, so its
+// entries go cold rather than cross.
+func (c *Cache) identity(fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions) (string, error) {
+	pc := fnValue.Pointer()
+	fnName := runtime.FuncForPC(pc).Name()
+	name := opts.Name
+
+	if name == "" {
+		if opts.DisableCache {
+			return "", nil
+		}
+		if !isTopLevel(fnName) {
+			return fmt.Sprintf("#%d", c.wrapSeq.Add(1)), nil
+		}
+		name = fnName
+	} else if strings.ContainsAny(name, "|#") {
+		return "", fmt.Errorf("name %q must not contain '|' or '#'", name)
+	}
+
+	binding := nameBinding{pc, fnType}
+	if prev, loaded := c.names.LoadOrStore(name, binding); loaded && (prev != binding || !isTopLevel(fnName)) {
+		return "", fmt.Errorf("name %q is already bound: Wrap once at setup, or use WithKeyFunc", name)
+	}
+	return name, nil
+}
+
+// isTopLevel reports whether a runtime function name is pkg.Func. Closures, method
+// values, method expressions and generics all carry a suffix, and reflect.MakeFunc
+// results report a reflect name, so anything else falls to a per-Wrap id.
+func isTopLevel(name string) bool {
+	base := name[strings.LastIndexByte(name, '/')+1:]
+	return strings.Count(base, ".") == 1 && !strings.ContainsAny(base, "[-(") && !strings.HasPrefix(base, "reflect.")
+}
+
+func (c *Cache) keyFor(name string, args []any) (string, bool) {
+	if custom := c.config.KeyGenFunc; custom != nil {
+		return name + "|" + custom(args), true
+	}
+	key, err := encodeArgs(args)
+	if err != nil {
+		return "", false
+	}
+	return name + "|" + key, true
+}
+
+// Key returns the key a Wrap with WithName(name) stores args under, for use with
+// Delete. It panics on a name no Wrap bound in this Cache and on args that differ
+// from the wrapped function's parameters, because either would make Delete a
+// silent no-op. A process that only invalidates binds the name with one uncalled
+// Wrap of a function with the same signature.
+func (c *Cache) Key(name string, args ...any) string {
+	bound, ok := c.names.Load(name)
+	if !ok {
+		panic(fmt.Sprintf("obcache.Key: no Wrap named %q in this Cache; Wrap a function with this signature under WithName(%q)", name, name))
+	}
+	if err := checkKeyArgs(bound.(nameBinding).t, args); err != nil {
+		panic(fmt.Sprintf("obcache.Key(%q): %v", name, err))
+	}
+	key, ok := c.keyFor(name, args)
+	if !ok {
+		panic(fmt.Sprintf("obcache.Key(%q): args have no key encoding", name))
+	}
+	return key
+}
+
+func checkKeyArgs(fnType reflect.Type, args []any) error {
+	offset := 0
+	if fnType.NumIn() > 0 && fnType.In(0) == contextType {
+		offset = 1
+	}
+	if len(args) != fnType.NumIn()-offset {
+		return fmt.Errorf("got %d args, the wrapped function takes %d", len(args), fnType.NumIn()-offset)
+	}
+	for i, arg := range args {
+		want := fnType.In(i + offset)
+		if want.Kind() == reflect.Interface {
+			continue
+		}
+		if got := reflect.TypeOf(arg); got != want {
+			return fmt.Errorf("arg %d is %v, the wrapped function takes %v", i, got, want)
+		}
+	}
+	return nil
 }
 
 // executeWrappedFunction handles the core wrapping logic
