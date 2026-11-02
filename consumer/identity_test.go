@@ -3,6 +3,8 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -248,4 +250,16 @@ func TestRefusedWrapLeavesNoName(t *testing.T) {
 	})
 	mustPanic(t, "no Wrap named", func() { c.Key("report", hiddenState{n: 1}) })
 	obcache.Wrap(c, func(int) string { return "" }, obcache.WithName("report"))
+}
+
+func TestDebugKeyCountIsCurrent(t *testing.T) {
+	c := memoryCache(t, obcache.NewDefaultConfig())
+	for i := range 5 {
+		_ = c.Set(fmt.Sprint(i), i, time.Hour)
+	}
+	rec := httptest.NewRecorder()
+	c.DebugHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stats", nil))
+	if !strings.Contains(rec.Body.String(), `"keyCount":5`) {
+		t.Errorf("stats = %s", rec.Body.String())
+	}
 }
