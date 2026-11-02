@@ -155,17 +155,18 @@ func (c *Cache) bindKey(fnValue reflect.Value, fnType reflect.Type, opts *WrapOp
 		return func(args []any) (string, bool) { return callKeyFunc(opts.KeyFunc, args) }, nil
 	}
 
+	// Checks come before identity binds a name, so a refused Wrap leaves no name.
+	if !opts.DisableCache && c.config.KeyGenFunc == nil {
+		if err := checkParams(fnType); err != nil {
+			return nil, err
+		}
+	}
 	name, err := c.identity(fnValue, fnType, opts)
 	if err != nil {
 		return nil, err
 	}
 	if opts.DisableCache {
 		return nil, nil // nothing is keyed or stored
-	}
-	if c.config.KeyGenFunc == nil {
-		if err := checkParams(fnType); err != nil {
-			return nil, err
-		}
 	}
 	return func(args []any) (string, bool) { return c.keyFor(name, args) }, nil
 }

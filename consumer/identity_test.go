@@ -238,3 +238,14 @@ func TestArgumentWithNoEncodingRunsUncached(t *testing.T) {
 		mustPanic(t, "bug in key func", func() { w(1) })
 	})
 }
+
+type hiddenState struct{ n int }
+
+func TestRefusedWrapLeavesNoName(t *testing.T) {
+	c := memoryCache(t, obcache.NewDefaultConfig())
+	mustPanic(t, "unexported field", func() {
+		obcache.Wrap(c, func(hiddenState) string { return "" }, obcache.WithName("report"))
+	})
+	mustPanic(t, "no Wrap named", func() { c.Key("report", hiddenState{n: 1}) })
+	obcache.Wrap(c, func(int) string { return "" }, obcache.WithName("report"))
+}
