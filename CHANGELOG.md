@@ -21,6 +21,10 @@ All notable changes to this project will be documented in this file.
 - `New` returns an error for an unknown eviction type instead of silently using LRU
 - Redis: `Close` no longer deletes shared entries, and it closes a client obcache built
 - Redis: key listing and `Clear` use SCAN with an escaped prefix, so a prefix containing a glob character cannot reach another application's keys
+- `Wrap` over Redis or compression decodes a hit into the declared return type, so integers, structs, pointers, slices and multi-return functions no longer panic on a hit, and large integers stay exact
+- Redis with compression now hits: entries record their format, and an entry that cannot be read is a miss rather than a wrong value
+- A compression config with `Level` unset now compresses; level 0 used to store the value uncompressed, larger than plain
+- Decompression is limited to `compression.MaxDecompressedSize`, so a small entry in a shared Redis cannot exhaust memory
 
 ### Security
 
@@ -34,6 +38,7 @@ All notable changes to this project will be documented in this file.
 
 - `WithName` gives a wrapped function a stable identity, and `Cache.Key` returns the key its entry is stored under, for use with `Delete`
 - `EvictionLRU`, `EvictionLFU` and `EvictionFIFO` select an eviction strategy without importing an internal package
+- `Stats.DecodeFailures` counts entries that could not be read back
 
 ### Changed
 

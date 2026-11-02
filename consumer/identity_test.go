@@ -164,9 +164,6 @@ type accountID int64
 
 func TestFindingKEY1(t *testing.T) {
 	for _, b := range backends() {
-		if b.name == redisGzip {
-			continue
-		}
 		t.Run(b.name, func(t *testing.T) {
 			c := b.new(t)
 			var calls atomic.Int32

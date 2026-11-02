@@ -154,7 +154,6 @@ func TestFeatureRedisBackend(t *testing.T) {
 }
 
 func TestFeatureCompression(t *testing.T) {
-	suppress(t, "Z1")
 	for _, algo := range []compression.CompressorType{compression.CompressorGzip, compression.CompressorDeflate} {
 		t.Run(string(algo), func(t *testing.T) {
 			cfg, mr := miniConfig(t)

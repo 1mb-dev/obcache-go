@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -53,7 +54,14 @@ type SerializedEntry struct {
 	CreatedAt  time.Time       `json:"created_at"`
 	ExpiresAt  *time.Time      `json:"expires_at,omitempty"`
 	LastAccess time.Time       `json:"last_access"`
+
+	// Format says how to read Value: formatJSON, or the name of the compressor
+	// whose base64 output it holds. An entry with none predates this field; it is
+	// a miss, and it stays, because an older instance may still be using it.
+	Format string `json:"format"`
 }
+
+const formatJSON = "json"
 
 // New creates a new Redis store with the given configuration
 func New(config *Config) (*Store, error) {
@@ -85,24 +93,13 @@ func New(config *Config) (*Store, error) {
 // Get retrieves an entry by key
 func (s *Store) Get(ctx context.Context, key string) (*entry.Entry, bool) {
 	redisKey := s.buildKey(key)
-	result := s.client.Get(ctx, redisKey)
-	if result.Err() != nil {
-		if result.Err() == redis.Nil {
-			return nil, false // Key not found
-		}
-		return nil, false // Other Redis errors treated as miss
+	data, err := s.client.Get(ctx, redisKey).Bytes()
+	if err != nil {
+		return nil, false // Missing keys and Redis errors are both a miss
 	}
 
-	data, err := result.Result()
+	entry, err := s.deserializeEntry(data)
 	if err != nil {
-		return nil, false
-	}
-
-	// Deserialize the entry
-	entry, err := s.deserializeEntry([]byte(data))
-	if err != nil {
-		// If deserialization fails, remove the corrupted key
-		s.client.Del(ctx, redisKey)
 		return nil, false
 	}
 
@@ -113,7 +110,10 @@ func (s *Store) Get(ctx context.Context, key string) (*entry.Entry, bool) {
 
 		// Call cleanup callback if set
 		if s.cleanupCallback != nil {
-			go s.cleanupCallback(key, entry.Value)
+			var value any
+			if raw, ok := entry.Value.(json.RawMessage); ok && json.Unmarshal(raw, &value) == nil {
+				go s.cleanupCallback(key, value)
+			}
 		}
 		return nil, false
 	}
@@ -233,7 +233,9 @@ func (s *Store) extractKey(redisKey string) string {
 	return strings.TrimPrefix(redisKey, s.keyPrefix)
 }
 
-// serializeEntry converts an entry to JSON for Redis storage
+// serializeEntry converts an entry to JSON for Redis storage. A compressed value is
+// []byte, which JSON carries as base64; anything else, including bytes the cache
+// already serialized, is written as plain JSON.
 func (s *Store) serializeEntry(e *entry.Entry) ([]byte, error) {
 	valueBytes, err := json.Marshal(e.Value)
 	if err != nil {
@@ -244,6 +246,10 @@ func (s *Store) serializeEntry(e *entry.Entry) ([]byte, error) {
 		Value:      valueBytes,
 		CreatedAt:  e.CreatedAt,
 		LastAccess: e.AccessedAt,
+		Format:     formatJSON,
+	}
+	if e.IsCompressed {
+		serialized.Format = e.CompressorName
 	}
 
 	if e.HasExpiry() {
@@ -253,25 +259,35 @@ func (s *Store) serializeEntry(e *entry.Entry) ([]byte, error) {
 	return json.Marshal(serialized)
 }
 
-// deserializeEntry converts JSON data back to an entry
+// deserializeEntry converts stored JSON back to an entry. The value stays encoded:
+// only the caller knows the type to decode it into.
 func (s *Store) deserializeEntry(data []byte) (*entry.Entry, error) {
 	var serialized SerializedEntry
 	if err := json.Unmarshal(data, &serialized); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal serialized entry: %w", err)
 	}
-
-	var value any
-	if err := json.Unmarshal(serialized.Value, &value); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal entry value: %w", err)
+	if serialized.Format == "" {
+		return nil, errors.New("entry has no format")
 	}
 
 	// Create a new entry with current time, then manually set the fields
 	var e *entry.Entry
 	if serialized.ExpiresAt != nil {
 		ttl := serialized.ExpiresAt.Sub(serialized.CreatedAt)
-		e = entry.New(value, ttl)
+		e = entry.New(nil, ttl)
 	} else {
-		e = entry.NewWithoutTTL(value)
+		e = entry.NewWithoutTTL(nil)
+	}
+
+	if serialized.Format == formatJSON {
+		e.Value = serialized.Value
+	} else {
+		var compressed []byte
+		if err := json.Unmarshal(serialized.Value, &compressed); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal compressed value: %w", err)
+		}
+		e.Value = compressed
+		e.SetCompressionInfo(serialized.Format, 0, len(compressed))
 	}
 
 	// Manually restore the timestamps by direct field access

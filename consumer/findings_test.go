@@ -22,9 +22,8 @@ import (
 const fallback = "fallback"
 
 func TestFindingB4(t *testing.T) {
-	suppress(t, "B4")
 	for _, b := range backends() {
-		if !b.serial || b.name == redisGzip {
+		if !b.serial {
 			continue
 		}
 		t.Run(b.name, func(t *testing.T) {
@@ -270,7 +269,6 @@ func TestFindingF1(t *testing.T) {
 }
 
 func TestFindingF2(t *testing.T) {
-	suppress(t, "F2")
 	cfg, _ := miniConfig(t)
 	c := memoryCache(t, cfg.WithCompression(readmeCompression(compression.CompressorGzip)))
 	var calls atomic.Int32
@@ -369,7 +367,6 @@ func counter(t *testing.T, reg *prometheus.Registry, name string) float64 {
 }
 
 func TestFindingZ1(t *testing.T) {
-	suppress(t, "Z1")
 	storedSize := func(t *testing.T, cfg *obcache.Config, mr *miniredis.Miniredis, value string) int {
 		t.Helper()
 		c := memoryCache(t, cfg)

@@ -42,7 +42,7 @@ type Config struct {
 	// Values smaller than this will not be compressed to avoid overhead
 	MinSize int
 
-	// Level is the compression level (1-9 for gzip/deflate, -1 for default)
+	// Level is the compression level (1-9 for gzip/deflate; 0 and -1 mean default)
 	Level int
 }
 
@@ -82,6 +82,21 @@ func (c *Config) WithLevel(level int) *Config {
 
 // NoOpCompressor provides a no-op implementation that doesn't compress
 type NoOpCompressor struct{}
+
+// MaxDecompressedSize bounds what Decompress will produce. Compressed bytes can
+// come from a shared Redis, so a small value must not expand to fill memory.
+const MaxDecompressedSize = 64 << 20
+
+func readLimited(reader io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, MaxDecompressedSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read decompressed data: %w", err)
+	}
+	if len(data) > MaxDecompressedSize {
+		return nil, fmt.Errorf("decompressed data exceeds %d bytes", MaxDecompressedSize)
+	}
+	return data, nil
+}
 
 // NewNoOpCompressor creates a new no-op compressor
 func NewNoOpCompressor() *NoOpCompressor {
@@ -144,12 +159,7 @@ func (g *GzipCompressor) Decompress(compressed []byte) ([]byte, error) {
 		_ = reader.Close() // Ignore error on defer
 	}()
 
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read decompressed data: %w", err)
-	}
-
-	return data, nil
+	return readLimited(reader)
 }
 
 // Name returns the compressor name
@@ -198,12 +208,7 @@ func (d *DeflateCompressor) Decompress(compressed []byte) ([]byte, error) {
 		_ = reader.Close() // Ignore error on defer
 	}()
 
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read decompressed data: %w", err)
-	}
-
-	return data, nil
+	return readLimited(reader)
 }
 
 // Name returns the compressor name
@@ -217,13 +222,19 @@ func NewCompressor(config *Config) (Compressor, error) {
 		return NewNoOpCompressor(), nil
 	}
 
+	// The zero value of Level must not silently mean "store, do not compress".
+	level := config.Level
+	if level == 0 {
+		level = gzip.DefaultCompression
+	}
+
 	switch config.Algorithm {
 	case CompressorNone:
 		return NewNoOpCompressor(), nil
 	case CompressorGzip:
-		return NewGzipCompressor(config.Level), nil
+		return NewGzipCompressor(level), nil
 	case CompressorDeflate:
-		return NewDeflateCompressor(config.Level), nil
+		return NewDeflateCompressor(level), nil
 	default:
 		return nil, fmt.Errorf("unsupported compression algorithm: %s", config.Algorithm)
 	}
