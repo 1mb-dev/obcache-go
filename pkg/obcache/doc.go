@@ -1,245 +1,80 @@
-// Package obcache provides a high-performance, thread-safe, in-memory cache with TTL support,
-// multiple eviction strategies (LRU/LFU/FIFO), function memoization, and hooks for observability.
+// Package obcache memoizes Go functions, with TTL, eviction and stampede protection.
 //
-// # Overview
+// # Function Wrapping
 //
-// obcache is designed for high-throughput applications requiring fast, reliable caching
-// with comprehensive observability and flexible configuration options. It supports both
-// direct cache operations and transparent function memoization through its Wrap functionality.
-//
-// # Key Features
-//
-//   - Thread-safe concurrent access with minimal lock contention
-//   - Time-to-live (TTL) expiration with automatic cleanup
-//   - Multiple eviction strategies: LRU, LFU, and FIFO
-//   - Function memoization with customizable key generation
-//   - Context-aware hooks for monitoring cache operations
-//   - Built-in statistics and performance monitoring
-//   - Redis backend support for distributed caching
-//   - Compression support for large values (gzip/deflate)
-//   - Prometheus metrics integration
-//   - Singleflight pattern to prevent cache stampedes
-//
-// # Basic Usage
-//
-// Create a cache and perform basic operations:
+// Wrap returns a function with the same signature that caches its results.
+// Concurrent callers for one key share one call.
 //
 //	cache, err := obcache.New(obcache.NewDefaultConfig())
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
+//	defer cache.Close()
 //
-//	// Store a value with 1-hour TTL
-//	err = cache.Set("user:123", userData, time.Hour)
-//	if err != nil {
-//	    log.Printf("Failed to set cache: %v", err)
-//	}
+//	cachedUser := obcache.Wrap(cache, fetchUser, obcache.WithTTL(5*time.Minute))
+//	user, err := cachedUser(123) // queries
+//	user, err = cachedUser(123)  // cache hit
 //
-//	// Retrieve a value
+// A context.Context first parameter is passed through and left out of the key. An
+// error return is not cached unless WithErrorCaching is set.
+//
+// # Direct Use
+//
+//	err := cache.Set("user:123", user, time.Hour)
 //	value, found := cache.Get("user:123")
-//	if found {
-//	    user := value.(UserData)
-//	    fmt.Printf("Found user: %+v\n", user)
-//	}
 //
-//	// Check statistics
-//	stats := cache.Stats()
-//	fmt.Printf("Hit rate: %.2f%%\n", stats.HitRate())
+// # Invalidation
 //
-// # Function Memoization
+// Name the function with WithName, then delete by the key its arguments produce:
 //
-// Cache expensive function calls automatically:
+//	cachedUser := obcache.Wrap(cache, fetchUser, obcache.WithName("user"))
+//	err := cache.Delete(cache.Key("user", 123))
 //
-//	// Original expensive function
-//	func fetchUser(userID int) (*User, error) {
-//	    // Expensive database query
-//	    return queryDatabase(userID)
-//	}
+// # Stores
 //
-//	// Wrap with caching
-//	cache, _ := obcache.New(obcache.NewDefaultConfig())
-//	cachedFetchUser := obcache.Wrap(cache, fetchUser, obcache.WithTTL(5*time.Minute))
+// NewDefaultConfig selects the memory store, with LRU, LFU or FIFO eviction.
+// NewRedisConfig and NewRedisConfigWithClient select Redis. WithCompression adds gzip
+// or deflate to either. Prometheus metrics live in pkg/metrics, and importing this
+// package alone does not link them.
 //
-//	// Use exactly like the original function - caching is transparent
-//	user1, err := cachedFetchUser(123)  // Database query
-//	user2, err := cachedFetchUser(123)  // Cache hit
+// # Limits
 //
-// # Configuration
+// Memory: Get and Wrap return the stored value, not a copy. Do not mutate results.
 //
-// Customize cache behavior with fluent configuration:
+// Redis or compression: every value passes through encoding/json, at any size. Wrap
+// decodes hits to the declared return type and panics at startup on return types that
+// cannot round-trip: interfaces (including any and map[string]any), unexported fields,
+// json:"-", func, chan, complex, one-way marshalers. For a dynamic shape, return
+// json.RawMessage. A value JSON cannot encode (NaN, cycles) is not cached. JSON also
+// loses invalid UTF-8, a time zone's name, and an empty slice or map under omitempty.
+// Set and Get on those paths are unchecked: unexported fields are lost, and numbers
+// return as float64, losing precision above 2^53.
 //
-//	config := obcache.NewDefaultConfig().
-//	    WithMaxEntries(10000).
-//	    WithDefaultTTL(30*time.Minute).
-//	    WithCleanupInterval(5*time.Minute).
-//	    WithEvictionType(eviction.LFU)  // Use LFU instead of default LRU
+// Redis names: every Wrap needs WithName or WithKeyFunc. A name is shared by every
+// process on that Redis and key prefix, and binding is per Cache, so services sharing
+// Redis need distinct KeyPrefix values. A field added to a return struct under a kept
+// name reads as zero until TTL; bump the name. A field renamed or removed is a miss.
 //
-//	cache, err := obcache.New(config)
+// Identity: a name binds one Wrap, and only a top-level function may Wrap under it
+// again. Wrap once, at setup. For a closure or method value wrapped per request, use
+// WithKeyFunc; unnamed, it never hits.
 //
-// # Eviction Strategies
+// Backends: refusals apply only on Redis and compression, so a program tested on memory
+// can panic at its first start on Redis. Name every Wrap if any environment uses Redis,
+// Wrap at startup, and test against the backend you ship.
 //
-// Choose the eviction strategy that best fits your use case:
+// Context: ctx is not in the key. Anything that varies by user belongs in the arguments.
 //
-//	import "github.com/1mb-dev/obcache-go/v2/internal/eviction"
+// Trust: anyone who can write to your Redis can forge any return value. Keys up to 64
+// bytes hold arguments in clear; a hash above that is not secrecy. A custom key function
+// must be injective and namespaced. MarshalText on an argument type must be injective.
 //
-//	// LRU (Least Recently Used) - Default
-//	// Evicts items that haven't been accessed recently
-//	config := obcache.NewDefaultConfig().WithEvictionType(eviction.LRU)
+// Errors: WithErrorCaching panics at Wrap on Redis or compression.
 //
-//	// LFU (Least Frequently Used)
-//	// Evicts items with the lowest access count
-//	config := obcache.NewDefaultConfig().WithEvictionType(eviction.LFU)
+// Concurrency: stampede protection is per process. A function with no error return
+// cannot honor a waiter's ctx. OnEvict does not fire on Redis.
 //
-//	// FIFO (First In, First Out)
-//	// Evicts oldest items regardless of access patterns
-//	config := obcache.NewDefaultConfig().WithEvictionType(eviction.FIFO)
-//
-// # Context-Aware Hooks
-//
-// Monitor cache operations with context-aware hooks:
-//
-//	hooks := &obcache.Hooks{}
-//
-//	// Hook on cache hits
-//	hooks.AddOnHit(func(ctx context.Context, key string, value any) {
-//	    log.Printf("Cache hit: %s", key)
-//	    metrics.IncrementCounter("cache.hits")
-//	})
-//
-//	// Hook on cache misses
-//	hooks.AddOnMiss(func(ctx context.Context, key string) {
-//	    log.Printf("Cache miss: %s", key)
-//	    metrics.IncrementCounter("cache.misses")
-//	})
-//
-//	// Hook on evictions
-//	hooks.AddOnEvict(func(ctx context.Context, key string, value any, reason obcache.EvictReason) {
-//	    log.Printf("Evicted: %s (reason: %s)", key, reason)
-//	})
-//
-//	// Hook on manual invalidations
-//	hooks.AddOnInvalidate(func(ctx context.Context, key string) {
-//	    log.Printf("Invalidated: %s", key)
-//	})
-//
-//	cache, _ := obcache.New(obcache.NewDefaultConfig().WithHooks(hooks))
-//
-// # Context Propagation
-//
-// Use context-aware methods for timeouts and tracing:
-//
-//	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-//	defer cancel()
-//
-//	// Set with context
-//	err := cache.SetContext(ctx, "key", "value", time.Hour)
-//
-//	// Get with context
-//	value, found := cache.GetContext(ctx, "key")
-//
-// # Redis Backend
-//
-// Use Redis for distributed caching:
-//
-//	config := obcache.NewRedisConfig("localhost:6379").
-//	    WithDefaultTTL(time.Hour)
-//
-//	// Customize Redis key prefix
-//	config.Redis.KeyPrefix = "myapp:"
-//
-//	cache, err := obcache.New(config)
-//	// All operations now use Redis instead of local memory
-//
-// # Compression
-//
-// Enable compression for large values:
-//
-//	import "github.com/1mb-dev/obcache-go/v2/pkg/compression"
-//
-//	config := obcache.NewDefaultConfig().
-//	    WithCompression(&compression.Config{
-//	        Enabled:   true,
-//	        Algorithm: compression.CompressorGzip,
-//	        MinSize:   1024, // Only compress values > 1KB
-//	    })
-//
-//	cache, err := obcache.New(config)
-//
-// # Metrics Integration
-//
-// Export metrics to Prometheus:
-//
-//	import (
-//	    "github.com/1mb-dev/obcache-go/v2/pkg/metrics"
-//	    "github.com/prometheus/client_golang/prometheus"
-//	)
-//
-//	// Create Prometheus exporter
-//	promConfig := &metrics.PrometheusConfig{
-//	    Registry: prometheus.DefaultRegisterer,
-//	}
-//	metricsConfig := metrics.NewDefaultConfig()
-//	exporter, _ := metrics.NewPrometheusExporter(metricsConfig, promConfig)
-//
-//	// Configure cache with metrics
-//	config := obcache.NewDefaultConfig().
-//	    WithMetrics(&obcache.MetricsConfig{
-//	        Exporter:  exporter,
-//	        Enabled:   true,
-//	        CacheName: "user-cache",
-//	    })
-//
-//	cache, _ := obcache.New(config)
-//
-// You can also implement custom exporters by implementing the metrics.Exporter interface.
-//
-// # Performance Considerations
-//
-//   - Use appropriate cache sizes based on available memory
-//   - Set reasonable TTL values to balance freshness with performance
-//   - Consider using Redis backend for multi-instance deployments
-//   - Enable compression for large values to reduce memory usage
-//   - Use hooks judiciously to avoid performance overhead
-//   - Monitor hit rates and adjust cache policies accordingly
-//   - Choose eviction strategy based on access patterns:
-//   - LRU: Good for temporal locality (recently used data)
-//   - LFU: Good for frequency patterns (popular items)
-//   - FIFO: Simple, predictable, good for time-series data
-//
-// # Thread Safety
-//
-// All cache operations are thread-safe and can be called concurrently from multiple
-// goroutines without additional synchronization. The cache uses fine-grained locking
-// and atomic operations to minimize contention.
-//
-// # Error Handling
-//
-// The cache is designed to degrade gracefully:
-//   - Set operations may fail due to capacity or backend issues
-//   - Get operations never fail - they return (nil, false) for missing/error cases
-//   - Hook execution errors are logged but don't affect cache operations
-//   - Backend connectivity issues fall back to cache misses where possible
-//
-// # Best Practices
-//
-//   - Use meaningful cache keys with consistent naming patterns
-//   - Set appropriate TTL values based on data freshness requirements
-//   - Monitor cache performance using built-in statistics
-//   - Use function wrapping for transparent caching of expensive operations
-//   - Implement proper error handling for critical cache operations
-//   - Use hooks for observability and debugging, not business logic
-//   - Test cache behavior under various load conditions
-//   - Choose the right eviction strategy for your access patterns
-//
-// # Examples
-//
-// See the examples directory for complete, runnable examples including:
-//   - Basic cache usage patterns
-//   - Redis integration
-//   - Prometheus metrics collection
-//   - Compression usage
-//   - Web framework integration (Gin)
-//
-// For more detailed documentation and examples, visit:
-// https://github.com/1mb-dev/obcache-go/v2
+// Operations: a client you pass in needs ContextTimeoutEnabled and its own timeouts, and
+// is the route to TLS. New pings a client it builds; pass a Client to skip that. Stats
+// and Len scan the prefix on Redis. DebugHandler has no authentication.
 package obcache

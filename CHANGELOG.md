@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 
 - `SimpleKeyFunc` is not injective; use `DefaultKeyFunc`
 - `metrics.WithKeyValueSizes`, `IncludeKeyValueSizes`, `SizeBuckets` and the `CacheOperationsTotal`, `CacheErrorsTotal`, `CacheKeySize` and `CacheValueSize` names: these metrics were registered but never written, and are no longer registered
+- `WrapSimple`, `WrapWithError`, `WrapFunc0`, `WrapFunc1`, `WrapFunc2` and their `WithError` forms: `Wrap` covers them. The `TestTTL` and `ExampleTTL` constants: define your own
 
 ### Added
 
