@@ -639,3 +639,14 @@ func TestFindingD1(t *testing.T) {
 		})
 	}
 }
+
+func TestRefusedReturnLeavesNoName(t *testing.T) {
+	for name, c := range serializingCaches(t) {
+		t.Run(name, func(t *testing.T) {
+			mustPanic(t, "which JSON drops", func() {
+				obcache.Wrap(c, func(int) withPrivate { return withPrivate{} }, obcache.WithName("report"))
+			})
+			obcache.Wrap(c, func(int) string { return "" }, obcache.WithName("report"))
+		})
+	}
+}

@@ -113,9 +113,11 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 		panic("obcache.Wrap: argument must be a function")
 	}
 
-	keyOf, err := cache.bindKey(fnValue, fnType, opts)
+	// Refusals run before bindKey, which binds a name only once nothing can refuse.
+	err := cache.checkWrap(fnType, opts)
+	var keyOf keyBinding
 	if err == nil {
-		err = cache.checkWrap(fnType, opts)
+		keyOf, err = cache.bindKey(fnValue, fnType, opts)
 	}
 	if err != nil {
 		panic("obcache.Wrap: " + err.Error())
