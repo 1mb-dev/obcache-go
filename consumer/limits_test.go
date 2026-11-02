@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/1mb-dev/obcache-go/v2/pkg/obcache"
+	"github.com/alicebob/miniredis/v2"
 )
 
 // Each test pins a line of the documented limits, so the text cannot outlive the
@@ -178,5 +179,26 @@ func TestLimitOnEvictDoesNotFireOnRedis(t *testing.T) {
 	c.Get("k")
 	if n := evicts.Load(); n != 0 {
 		t.Errorf("OnEvict fired %d times; update the documented limit", n)
+	}
+}
+
+func TestLimitRedisOutageIsColdCache(t *testing.T) {
+	mr := miniredis.RunT(t)
+	c := memoryCache(t, obcache.NewRedisConfig(mr.Addr()))
+	var calls atomic.Int32
+	w := obcache.Wrap(c, func(id int) (int, error) {
+		calls.Add(1)
+		return id, nil
+	}, opts("outage")...)
+	_, _ = w(1)
+
+	mr.Close()
+	for range 2 {
+		if got, err := w(1); got != 1 || err != nil {
+			t.Fatalf("got %d, %v: an outage reached the caller; update the documented limit", got, err)
+		}
+	}
+	if n, misses := calls.Load(), c.Stats().Misses(); n != 3 || misses != 3 {
+		t.Errorf("calls=%d misses=%d: an outage is not a counted miss; update the documented limit", n, misses)
 	}
 }
