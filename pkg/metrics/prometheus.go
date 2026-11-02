@@ -189,7 +189,9 @@ func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labe
 	return nil
 }
 
-// ExportStats exports the current cache statistics to Prometheus
+// ExportStats exports the current cache statistics to Prometheus. Pass the same
+// Stats pointer for a source on every call: each distinct pointer keeps its own
+// last-seen totals for the exporter's lifetime, and starts from zero.
 func (p *PrometheusExporter) ExportStats(stats Stats, labels Labels) error {
 	// Extract only cache_name for basic metrics
 	baseLabels := prometheus.Labels{}

@@ -117,11 +117,11 @@ func WithCondition(condition func(ctx context.Context, key string) bool) HookOpt
 	}
 }
 
-// invokeOnHitWithCtx calls all OnHit hooks with context
 func (h *Hooks) hasOnHit() bool {
 	return len(h.onHit) > 0
 }
 
+// invokeOnHitWithCtx calls all OnHit hooks with context
 func (h *Hooks) invokeOnHitWithCtx(ctx context.Context, key string, value any, _ []any) {
 	h.invokeHooks(h.onHit, func(hook Hook) {
 		if hook.Condition == nil || hook.Condition(ctx, key) {
