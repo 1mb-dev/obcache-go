@@ -326,6 +326,21 @@ func TestDefaultKeyFuncWalksPromotedMarshalers(t *testing.T) {
 
 func ptrTo[T any](v T) *T { return &v }
 
+func TestTypeNameQualifiesComponents(t *testing.T) {
+	cases := map[reflect.Type]string{
+		reflect.TypeFor[int]():                     "int",
+		reflect.TypeFor[time.Time]():               "time.Time",
+		reflect.TypeFor[[]*time.Time]():            "[]*time.Time",
+		reflect.TypeFor[[2]embeddedTime]():         "[2]github.com/1mb-dev/obcache-go/v2/pkg/obcache.embeddedTime",
+		reflect.TypeFor[map[string]embeddedTime](): "map[string]github.com/1mb-dev/obcache-go/v2/pkg/obcache.embeddedTime",
+	}
+	for typ, want := range cases {
+		if got := typeName(typ); got != want {
+			t.Errorf("typeName(%v) = %q, want %q", typ, got, want)
+		}
+	}
+}
+
 type marshalerField struct {
 	M encoding.TextMarshaler
 }

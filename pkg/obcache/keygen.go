@@ -107,19 +107,37 @@ func (e *keyEncoder) bytes(b []byte) {
 }
 
 // typed tags a value with its dynamic type, which a parameter of interface type
-// does not fix. Type.String alone is not unique across packages.
+// does not fix.
 func (e *keyEncoder) typed(v reflect.Value, depth int) error {
 	if !v.IsValid() {
 		e.tag('n')
 		return nil
 	}
-	name := v.Type().String()
-	if pkg := v.Type().PkgPath(); pkg != "" {
-		name = pkg + "." + name
-	}
 	e.tag('t')
-	e.text(name)
+	e.text(typeName(v.Type()))
 	return e.value(v, depth)
+}
+
+// typeName qualifies every named type in t by package path: Type.String uses the
+// package's name, which two packages can share.
+func typeName(t reflect.Type) string {
+	if t.Name() != "" {
+		if pkg := t.PkgPath(); pkg != "" {
+			return pkg + "." + t.Name()
+		}
+		return t.Name()
+	}
+	switch t.Kind() {
+	case reflect.Pointer:
+		return "*" + typeName(t.Elem())
+	case reflect.Slice:
+		return "[]" + typeName(t.Elem())
+	case reflect.Array:
+		return "[" + strconv.Itoa(t.Len()) + "]" + typeName(t.Elem())
+	case reflect.Map:
+		return "map[" + typeName(t.Key()) + "]" + typeName(t.Elem())
+	}
+	return t.String()
 }
 
 func (e *keyEncoder) value(v reflect.Value, depth int) error {
