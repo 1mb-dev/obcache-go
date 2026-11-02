@@ -1,8 +1,12 @@
 package obcache
 
 import (
+	"encoding"
+	"math/rand/v2"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultKeyFunc(t *testing.T) {
@@ -15,17 +19,17 @@ func TestDefaultKeyFunc(t *testing.T) {
 		{
 			name:     "single int",
 			args:     []any{42},
-			expected: "0:i:42",
+			expected: "t3:inti42;",
 		},
 		{
 			name:     "single string",
 			args:     []any{"hello"},
-			expected: "0:s:hello",
+			expected: "t6:strings5:hello",
 		},
 		{
 			name:     "multiple args",
 			args:     []any{"user", 123, true},
-			expected: "0:s:user|1:i:123|2:b:true",
+			expected: "t6:strings4:usert3:inti123;t4:boolbtrue",
 		},
 		{
 			name:     "empty args",
@@ -35,12 +39,12 @@ func TestDefaultKeyFunc(t *testing.T) {
 		{
 			name:     "nil arg",
 			args:     []any{nil},
-			expected: "0:nil",
+			expected: "n",
 		},
 		{
 			name:     "mixed types",
 			args:     []any{"str", 42, 3.14, true, nil},
-			expected: "0:s:str|1:i:42|2:f:3.14|3:b:true|4:nil",
+			expected: "t6:strings3:strt3:inti42;t7:float64f3.14;t4:boolbtruen",
 		},
 	}
 
@@ -292,6 +296,107 @@ func BenchmarkDefaultKeyFuncLongKey(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		_ = DefaultKeyFunc(args)
+	}
+}
+
+type embeddedTime struct {
+	time.Time
+	Tenant string
+}
+
+func TestDefaultKeyFuncWalksPromotedMarshalers(t *testing.T) {
+	at := time.Unix(1000, 0)
+	a := DefaultKeyFunc([]any{embeddedTime{at, "alice"}})
+	b := DefaultKeyFunc([]any{embeddedTime{at, "bob"}})
+	if a == b {
+		t.Error("embedded time.Time hid the Tenant field from the key")
+	}
+}
+
+type marshalerField struct {
+	M encoding.TextMarshaler
+}
+
+func TestDefaultKeyFuncNilMarshalerField(t *testing.T) {
+	if a, b := DefaultKeyFunc([]any{marshalerField{}}), DefaultKeyFunc([]any{marshalerField{time.Unix(1, 0)}}); a == b {
+		t.Error("nil and set interface fields shared a key")
+	}
+}
+
+func TestDefaultKeyFuncPanicsWithNoEncoding(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("expected a panic on an argument with no encoding")
+		}
+	}()
+	DefaultKeyFunc([]any{make(chan int)})
+}
+
+func TestEncodeArgsLargeValuesHash(t *testing.T) {
+	large := make([]byte, 3*keySpill)
+	other := make([]byte, 3*keySpill)
+	other[len(other)-1] = 1
+	a, err := encodeArgs([]any{large})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := encodeArgs([]any{other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b || len(a) != 64 {
+		t.Errorf("a = %q, b = %q", a, b)
+	}
+	if s, _ := encodeArgs([]any{strings.Repeat("x", 3*keySpill)}); len(s) != 64 {
+		t.Errorf("large string key = %q", s)
+	}
+}
+
+// Keys must stay distinct whatever the strings contain, so the generator favors
+// the encoding's own delimiters.
+func TestEncodeArgsIsInjective(t *testing.T) {
+	alphabet := []string{"a", "b", "|", ":", ",", ";", "s", "t", "i", "n", "(", ")", "[", "{", "1", "0", "6", "\x00"}
+	r := rand.New(rand.NewPCG(1, 2))
+	word := func() string {
+		var b strings.Builder
+		for range r.IntN(5) {
+			b.WriteString(alphabet[r.IntN(len(alphabet))])
+		}
+		return b.String()
+	}
+	build := func() []any {
+		switch r.IntN(5) {
+		case 0:
+			return []any{word(), word()}
+		case 1:
+			return []any{word()}
+		case 2:
+			return []any{[]string{word(), word()}}
+		case 3:
+			return []any{map[string]string{word(): word(), word(): word()}}
+		}
+		return []any{[]string{word()}, []string{word()}}
+	}
+
+	seen := make(map[string][]any)
+	for range 200_000 {
+		args := build()
+		key, err := encodeArgs(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if prior, ok := seen[key]; ok && !reflect.DeepEqual(prior, args) {
+			t.Fatalf("key %q shared by %#v and %#v", key, prior, args)
+		}
+		seen[key] = args
+	}
+}
+
+func BenchmarkDefaultKeyFuncLargeBytes(b *testing.B) {
+	args := []any{make([]byte, 1<<20)}
+	b.ReportAllocs()
+	for b.Loop() {
 		_ = DefaultKeyFunc(args)
 	}
 }

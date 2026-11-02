@@ -16,6 +16,15 @@ All notable changes to this project will be documented in this file.
 - A cancelled caller no longer fails other callers waiting on the same key, and with `WithErrorCaching` its cancellation is not cached
 - A waiter stops waiting when its own context ends
 - `Wrap` handles a nil value in an interface return, functions returning only `error`, and variadic functions
+- Default cache keys encode every argument in full: `time.Time` values, long slices, large maps and structs with many fields no longer share keys, and `[16]byte` arguments no longer panic
+
+### Security
+
+- Default cache keys could collide across arguments, so a call could return another caller's cached value, and a caller-controlled string could reach such an entry in some shapes. Keys are now unambiguous. Affects v2.0.2 and `github.com/vnykmshr/obcache-go` v1.0.0 to v1.1.0, which retract cannot reach. Upgrade to v2.1.0.
+
+### Deprecated
+
+- `SimpleKeyFunc` is not injective; use `DefaultKeyFunc`
 
 ## [2.0.0] - 2025-10-27
 

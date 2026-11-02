@@ -76,10 +76,7 @@ func WithErrorTTL(ttl time.Duration) WrapOption {
 // Wrap wraps any function with caching using Go generics
 // T must be a function type
 func Wrap[T any](cache *Cache, fn T, options ...WrapOption) T {
-	opts := &WrapOptions{
-		TTL:     cache.config.DefaultTTL,
-		KeyFunc: cache.getKeyGenFunc(),
-	}
+	opts := &WrapOptions{TTL: cache.config.DefaultTTL}
 
 	for _, opt := range options {
 		opt(opts)
@@ -98,9 +95,14 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 		panic("obcache.Wrap: argument must be a function")
 	}
 
+	keyOf, err := cache.bindKey(fnType, opts)
+	if err != nil {
+		panic("obcache.Wrap: " + err.Error())
+	}
+
 	// Create the wrapper function
 	wrapper := reflect.MakeFunc(fnType, func(args []reflect.Value) []reflect.Value {
-		return executeWrappedFunction(cache, fnValue, fnType, opts, args)
+		return executeWrappedFunction(cache, fnValue, fnType, opts, keyOf, args)
 	})
 
 	return wrapper.Interface().(T)
@@ -120,14 +122,40 @@ type flight struct {
 	leaderCtxDone bool
 }
 
-// executeWrappedFunction handles the core wrapping logic
-func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value) []reflect.Value {
-	ctx, keyArgs := extractContextAndArgs(fnType, args)
-	key := opts.KeyFunc(keyArgs)
+// keyBinding turns a call's arguments into a key, or reports that they have none.
+type keyBinding func(args []any) (string, bool)
 
+// bindKey resolves how a wrapped function keys its calls, once, at Wrap time.
+func (c *Cache) bindKey(fnType reflect.Type, opts *WrapOptions) (keyBinding, error) {
+	if opts.KeyFunc != nil {
+		return func(args []any) (string, bool) { return opts.KeyFunc(args), true }, nil
+	}
+	if custom := c.config.KeyGenFunc; custom != nil {
+		return func(args []any) (string, bool) { return custom(args), true }, nil
+	}
+	if opts.DisableCache {
+		return nil, nil
+	}
+	if err := checkParams(fnType); err != nil {
+		return nil, err
+	}
+	return func(args []any) (string, bool) {
+		key, err := encodeArgs(args)
+		return key, err == nil
+	}, nil
+}
+
+// executeWrappedFunction handles the core wrapping logic
+func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, keyOf keyBinding, args []reflect.Value) []reflect.Value {
 	// If caching is disabled, call original function directly
 	if opts.DisableCache {
 		return call(fnValue, fnType, args)
+	}
+
+	ctx, keyArgs := extractContextAndArgs(fnType, args)
+	key, ok := keyOf(keyArgs)
+	if !ok {
+		return call(fnValue, fnType, args) // a value with no encoding runs uncached
 	}
 
 	hasErr := hasErrorReturn(fnType)
@@ -203,9 +231,11 @@ func extractContextAndArgs(fnType reflect.Type, args []reflect.Value) (context.C
 	var keyArgs []any
 
 	// Detect context.Context as first parameter
-	if len(args) > 0 && fnType.In(0).String() == "context.Context" {
-		// First parameter is context.Context
-		ctx = args[0].Interface().(context.Context)
+	if len(args) > 0 && fnType.In(0) == contextType {
+		// A nil context is possible: the parameter is an interface.
+		if c, ok := args[0].Interface().(context.Context); ok {
+			ctx = c
+		}
 		// Use remaining args for key generation
 		keyArgs = make([]any, len(args)-1)
 		for i := 1; i < len(args); i++ {
@@ -222,7 +252,10 @@ func extractContextAndArgs(fnType reflect.Type, args []reflect.Value) (context.C
 	return ctx, keyArgs
 }
 
-var errorType = reflect.TypeFor[error]()
+var (
+	errorType   = reflect.TypeFor[error]()
+	contextType = reflect.TypeFor[context.Context]()
+)
 
 // hasErrorReturn reports whether the last result is an error. A struct error type
 // has no "no error" value, so it counts as an ordinary result.

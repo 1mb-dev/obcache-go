@@ -346,14 +346,6 @@ func (c *Cache) updateKeyCount() {
 	c.stats.setKeyCount(count)
 }
 
-// getKeyGenFunc returns the key generation function to use
-func (c *Cache) getKeyGenFunc() KeyGenFunc {
-	if c.config.KeyGenFunc != nil {
-		return c.config.KeyGenFunc
-	}
-	return DefaultKeyFunc
-}
-
 // createCompressedEntry creates a cache entry with compression if applicable
 func (c *Cache) createCompressedEntry(value any, ttl time.Duration) (*entry.Entry, error) {
 	var cacheEntry *entry.Entry
