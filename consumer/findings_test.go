@@ -189,7 +189,7 @@ func TestFindingR1(t *testing.T) {
 	}
 	before := mr.CommandCount()
 	_ = c.Set("one-more", 1, time.Hour)
-	if n := mr.CommandCount() - before; n > 2 {
+	if n := mr.CommandCount() - before; n != 1 {
 		t.Errorf("one Set issued %d commands with 100 keys present", n)
 	}
 }
