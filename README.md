@@ -22,7 +22,7 @@ Use obcache-go when an expensive call, usually a query or an API request, should
 Requires Go 1.26 or later.
 
 ```bash
-go get github.com/1mb-dev/obcache-go/v2
+go get github.com/1mb-dev/obcache-go/v2/pkg/obcache
 ```
 
 ## Quick Start
@@ -177,6 +177,10 @@ func main() {
 ### Prometheus
 
 `pkg/metrics` holds the exporter. Importing only `pkg/obcache` does not link the Prometheus client. Counters reach Prometheus every `ReportingInterval`; with it unset, nothing is exported.
+
+```bash
+go get github.com/1mb-dev/obcache-go/v2/pkg/metrics
+```
 
 ```go
 package main
