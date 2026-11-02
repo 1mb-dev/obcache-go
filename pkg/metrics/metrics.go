@@ -70,13 +70,21 @@ type MetricNames struct {
 	CacheMissesTotal        string
 	CacheEvictionsTotal     string
 	CacheInvalidationsTotal string
-	CacheOperationsTotal    string
-	CacheErrorsTotal        string
+
+	// Deprecated: never exported.
+	CacheOperationsTotal string
+
+	// Deprecated: never exported.
+	CacheErrorsTotal string
 
 	// Histograms
 	CacheOperationDuration string
-	CacheKeySize           string
-	CacheValueSize         string
+
+	// Deprecated: never exported.
+	CacheKeySize string
+
+	// Deprecated: never exported.
+	CacheValueSize string
 
 	// Gauges
 	CacheKeysCount        string
@@ -122,7 +130,7 @@ type Config struct {
 	// IncludeDetailedTimings enables detailed operation timing metrics
 	IncludeDetailedTimings bool
 
-	// IncludeKeyValueSizes enables key/value size metrics (may impact performance)
+	// Deprecated: has no effect; no size metrics are exported.
 	IncludeKeyValueSizes bool
 }
 
@@ -165,7 +173,9 @@ func (c *Config) WithDetailedTimings(enabled bool) *Config {
 	return c
 }
 
-// WithKeyValueSizes enables key/value size metrics
+// WithKeyValueSizes sets IncludeKeyValueSizes.
+//
+// Deprecated: has no effect; no size metrics are exported.
 func (c *Config) WithKeyValueSizes(enabled bool) *Config {
 	c.IncludeKeyValueSizes = enabled
 	return c

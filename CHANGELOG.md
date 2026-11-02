@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 ### Deprecated
 
 - `SimpleKeyFunc` is not injective; use `DefaultKeyFunc`
+- `metrics.WithKeyValueSizes`, `IncludeKeyValueSizes`, `SizeBuckets` and the `CacheOperationsTotal`, `CacheErrorsTotal`, `CacheKeySize` and `CacheValueSize` names: these metrics were registered but never written, and are no longer registered
 
 ### Added
 

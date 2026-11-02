@@ -23,13 +23,9 @@ type PrometheusExporter struct {
 	missesTotal        *prometheus.CounterVec
 	evictionsTotal     *prometheus.CounterVec
 	invalidationsTotal *prometheus.CounterVec
-	operationsTotal    *prometheus.CounterVec
-	errorsTotal        *prometheus.CounterVec
 
 	// Histograms
 	operationDuration *prometheus.HistogramVec
-	keySize           *prometheus.HistogramVec
-	valueSize         *prometheus.HistogramVec
 
 	// Gauges
 	keysCount        *prometheus.GaugeVec
@@ -80,7 +76,9 @@ type PrometheusConfig struct {
 
 	// Buckets for histogram metrics
 	DurationBuckets []float64
-	SizeBuckets     []float64
+
+	// Deprecated: has no effect; no size metrics are exported.
+	SizeBuckets []float64
 }
 
 // NewPrometheusExporter creates a new Prometheus metrics exporter
@@ -102,11 +100,6 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 	durationBuckets := promConfig.DurationBuckets
 	if durationBuckets == nil {
 		durationBuckets = []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}
-	}
-
-	sizeBuckets := promConfig.SizeBuckets
-	if sizeBuckets == nil {
-		sizeBuckets = []float64{64, 256, 1024, 4096, 16384, 65536, 262144, 1048576}
 	}
 
 	// Convert config labels to prometheus labels
@@ -132,7 +125,7 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 	}
 
 	// Create standard metrics
-	if err := exporter.createStandardMetrics(defaultLabels, durationBuckets, sizeBuckets); err != nil {
+	if err := exporter.createStandardMetrics(defaultLabels, durationBuckets); err != nil {
 		return nil, fmt.Errorf("failed to create standard metrics: %w", err)
 	}
 
@@ -140,7 +133,7 @@ func NewPrometheusExporter(config *Config, promConfig *PrometheusConfig) (*Prome
 }
 
 // createStandardMetrics creates all the standard cache metrics
-func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labels, durationBuckets, sizeBuckets []float64) error {
+func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labels, durationBuckets []float64) error {
 	var err error
 
 	// Use a consistent set of base labels for all metrics
@@ -167,31 +160,9 @@ func (p *PrometheusExporter) createStandardMetrics(defaultLabels prometheus.Labe
 		return err
 	}
 
-	p.operationsTotal, err = p.createCounterVec(p.config.MetricNames.CacheOperationsTotal, "Total number of cache operations", append(baseLabels, "operation", "result"), defaultLabels)
-	if err != nil {
-		return err
-	}
-
-	p.errorsTotal, err = p.createCounterVec(p.config.MetricNames.CacheErrorsTotal, "Total number of cache errors", append(baseLabels, "operation"), defaultLabels)
-	if err != nil {
-		return err
-	}
-
 	// Histograms
 	if p.config.IncludeDetailedTimings {
 		p.operationDuration, err = p.createHistogramVec(p.config.MetricNames.CacheOperationDuration, "Cache operation duration in seconds", append(baseLabels, "operation"), defaultLabels, durationBuckets)
-		if err != nil {
-			return err
-		}
-	}
-
-	if p.config.IncludeKeyValueSizes {
-		p.keySize, err = p.createHistogramVec(p.config.MetricNames.CacheKeySize, "Cache key size in bytes", baseLabels, defaultLabels, sizeBuckets)
-		if err != nil {
-			return err
-		}
-
-		p.valueSize, err = p.createHistogramVec(p.config.MetricNames.CacheValueSize, "Cache value size in bytes", baseLabels, defaultLabels, sizeBuckets)
 		if err != nil {
 			return err
 		}
