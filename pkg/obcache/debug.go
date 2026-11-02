@@ -72,7 +72,8 @@ func (c *Cache) debugKeyName(key string) string {
 
 // DebugHandler returns an HTTP handler that provides cache debug information. It has
 // no authentication. By default it serves statistics and entry metadata, with keys
-// reduced to the function name; WithDebugValues adds full keys and values.
+// reduced to a name this Cache bound with WithName, or "(unnamed)" for anything
+// else; WithDebugValues adds full keys and values.
 // The handler supports the following endpoints:
 //   - GET /stats - Returns only cache statistics (no keys)
 //   - GET /keys - Returns statistics and all cache entries with metadata

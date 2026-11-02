@@ -343,7 +343,7 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 	defer cache.stats.decInFlight()
 
 	for aborts := 0; ; aborts++ {
-		// A retry is the same call: its misses were counted the first time.
+		// One call records one outcome, on its first lookup.
 		if results, found := cache.lookup(ctx, key, fnType, hasErr, aborts == 0); found {
 			return results
 		}
@@ -455,14 +455,15 @@ func storedValue(results []reflect.Value, n int) any {
 
 // lookup returns a wrapped function's cached results. Anything that does not read
 // back as this function's results is a miss, counted before it is reported, so the
-// hit rate cannot hide an entry that recomputes on every call.
-func (c *Cache) lookup(ctx context.Context, key string, fnType reflect.Type, hasErr, countMiss bool) ([]reflect.Value, bool) {
+// hit rate cannot hide an entry that recomputes on every call. With record false it
+// counts nothing and fires no hook.
+func (c *Cache) lookup(ctx context.Context, key string, fnType reflect.Type, hasErr, record bool) ([]reflect.Value, bool) {
 	start := time.Now()
 	defer func() { c.recordCacheOperation(metrics.OperationGet, time.Since(start)) }()
 
 	e, ok := c.store.Get(ctx, key)
 	if !ok {
-		if countMiss {
+		if record {
 			c.miss(ctx, key)
 		}
 		return nil, false
@@ -479,11 +480,15 @@ func (c *Cache) lookup(ctx context.Context, key string, fnType reflect.Type, has
 		results, ok = cachedResults(e.Value, fnType, hasErr)
 	}
 	if !ok {
-		if countMiss {
+		if record {
 			c.stats.incDecodeFailures()
 			c.miss(ctx, key)
 		}
 		return nil, false
+	}
+
+	if !record {
+		return results, true
 	}
 
 	// Hooks see what the caller is about to receive, in the form a miss stores.
