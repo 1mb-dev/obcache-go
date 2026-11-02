@@ -62,6 +62,20 @@ type MetricsConfig struct {
 	Labels metrics.Labels
 }
 
+// EvictionType selects the memory store's eviction strategy.
+type EvictionType = eviction.EvictionType
+
+const (
+	// EvictionLRU evicts the least recently used entry. The default.
+	EvictionLRU = eviction.LRU
+
+	// EvictionLFU evicts the least frequently used entry.
+	EvictionLFU = eviction.LFU
+
+	// EvictionFIFO evicts the oldest entry.
+	EvictionFIFO = eviction.FIFO
+)
+
 // Config defines the configuration options for a Cache instance
 type Config struct {
 	// StoreType determines which backend store to use
@@ -85,7 +99,7 @@ type Config struct {
 	// EvictionType sets the eviction strategy for memory store
 	// Only applies to memory store
 	// Default: LRU
-	EvictionType eviction.EvictionType
+	EvictionType EvictionType
 
 	// KeyGenFunc defines a custom key generation function
 	// If nil, DefaultKeyFunc will be used
@@ -217,7 +231,7 @@ func (c *Config) WithCompression(compressionConfig *compression.Config) *Config 
 }
 
 // WithEvictionType sets the eviction strategy for memory store
-func (c *Config) WithEvictionType(evictionType eviction.EvictionType) *Config {
+func (c *Config) WithEvictionType(evictionType EvictionType) *Config {
 	c.EvictionType = evictionType
 	return c
 }

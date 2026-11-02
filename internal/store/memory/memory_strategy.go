@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -46,7 +47,7 @@ func NewWithStrategyAndCleanup(config eviction.Config, cleanupInterval time.Dura
 }
 
 // Get retrieves an entry by key
-func (s *StrategyStore) Get(key string) (*entry.Entry, bool) {
+func (s *StrategyStore) Get(_ context.Context, key string) (*entry.Entry, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 
@@ -59,12 +60,18 @@ func (s *StrategyStore) Get(key string) (*entry.Entry, bool) {
 	if entry.IsExpired() {
 		// Remove expired entry (do this in a separate goroutine to avoid deadlock)
 		go func() {
+			// The key may hold a fresh entry by the time this runs.
 			s.mutex.Lock()
-			s.strategy.Remove(key)
+			current, found := s.strategy.Peek(key)
+			stale := found && current == entry
+			if stale {
+				s.strategy.Remove(key)
+			}
+			callback := s.cleanupCallback
 			s.mutex.Unlock()
 
-			if s.cleanupCallback != nil {
-				s.cleanupCallback(key, entry.Value)
+			if stale && callback != nil {
+				callback(key, entry.Value)
 			}
 		}()
 		return nil, false
@@ -76,11 +83,10 @@ func (s *StrategyStore) Get(key string) (*entry.Entry, bool) {
 }
 
 // Set stores an entry with the given key
-func (s *StrategyStore) Set(key string, entry *entry.Entry) error {
+func (s *StrategyStore) Set(_ context.Context, key string, entry *entry.Entry) error {
 	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	evictedKey, evictedEntry, wasEvicted := s.strategy.Add(key, entry)
+	s.mutex.Unlock()
 
 	// Call eviction callback if an entry was evicted
 	if wasEvicted && s.evictCallback != nil && evictedKey != "" && evictedEntry != nil {
@@ -171,26 +177,31 @@ func (s *StrategyStore) Capacity() int {
 	return s.strategy.Capacity()
 }
 
-// Cleanup removes expired entries and returns the number of entries removed
+// Cleanup removes expired entries and returns the number of entries removed.
+// Callbacks run after the lock is released, so a hook may call back into the store.
 func (s *StrategyStore) Cleanup() int {
+	type expired struct {
+		key   string
+		value any
+	}
+	var gone []expired
+
 	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	keys := s.strategy.Keys()
-	removed := 0
-
-	for _, key := range keys {
+	for _, key := range s.strategy.Keys() {
 		if entry, found := s.strategy.Peek(key); found && entry.IsExpired() {
 			s.strategy.Remove(key)
-			removed++
-
-			if s.cleanupCallback != nil {
-				s.cleanupCallback(key, entry.Value)
-			}
+			gone = append(gone, expired{key, entry.Value})
 		}
 	}
+	callback := s.cleanupCallback
+	s.mutex.Unlock()
 
-	return removed
+	if callback != nil {
+		for _, e := range gone {
+			callback(e.key, e.value)
+		}
+	}
+	return len(gone)
 }
 
 // startCleanup starts the automatic cleanup goroutine

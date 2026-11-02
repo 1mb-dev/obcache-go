@@ -28,22 +28,25 @@ func TestFindingB4(t *testing.T) {
 		}
 		t.Run(b.name, func(t *testing.T) {
 			c := b.new(t)
-			small := obcache.Wrap(c, func(int) (int, error) { return 7, nil }, opts("small")...)
+			var calls atomic.Int32
+			small := obcache.Wrap(c, func(int) (int, error) { calls.Add(1); return 7, nil }, opts("small")...)
 			_, _ = small(1)
 			if hit, err := small(1); hit != 7 || err != nil {
 				t.Errorf("int hit = %d, %v", hit, err)
 			}
-			structured := obcache.Wrap(c, func(int) (User, error) { return User{ID: 1}, nil }, opts("struct")...)
+			structured := obcache.Wrap(c, func(int) (User, error) { calls.Add(1); return User{ID: 1}, nil }, opts("struct")...)
 			_, _ = structured(1)
 			if hit, err := structured(1); hit.ID != 1 || err != nil {
 				t.Errorf("struct hit = %+v, %v", hit, err)
+			}
+			if n := calls.Load(); n != 2 {
+				t.Errorf("underlying calls = %d, want one per function", n)
 			}
 		})
 	}
 }
 
 func TestFindingB5(t *testing.T) {
-	suppress(t, "B5")
 	c := memoryCache(t, obcache.NewDefaultConfig())
 	a := obcache.Wrap(c, func(int) (any, error) { return nil, nil }, opts("any")...)
 	s := obcache.Wrap(c, func(int) (fmt.Stringer, error) { return nil, nil }, opts("stringer")...)
@@ -80,7 +83,6 @@ func TestFindingB6(t *testing.T) {
 }
 
 func TestFindingB7(t *testing.T) {
-	suppress(t, "B7")
 	c, err := obcache.New(obcache.NewDefaultConfig())
 	if err != nil {
 		t.Fatal(err)
@@ -94,14 +96,12 @@ func TestFindingB7(t *testing.T) {
 }
 
 func TestFindingB8(t *testing.T) {
-	suppress(t, "B8")
 	if _, err := obcache.New(obcache.NewDefaultConfig().WithEvictionType("bogus")); err == nil {
 		t.Error("New accepted an unknown eviction type")
 	}
 }
 
 func TestFindingSH1(t *testing.T) {
-	suppress(t, "SH1")
 	c := memoryCache(t, obcache.NewDefaultConfig())
 
 	t.Run("variadic", func(t *testing.T) {
@@ -141,7 +141,6 @@ func TestFindingSH1(t *testing.T) {
 }
 
 func TestFindingH1(t *testing.T) {
-	suppress(t, "H1")
 	t.Run("OnHit-calls-Delete", func(t *testing.T) {
 		hooks := obcache.NewHooks()
 		var c *obcache.Cache
@@ -183,7 +182,6 @@ func TestFindingH1(t *testing.T) {
 }
 
 func TestFindingR1(t *testing.T) {
-	suppress(t, "R1")
 	cfg, mr := miniConfig(t)
 	c := memoryCache(t, cfg)
 	for i := range 100 {
@@ -191,13 +189,12 @@ func TestFindingR1(t *testing.T) {
 	}
 	before := mr.CommandCount()
 	_ = c.Set("one-more", 1, time.Hour)
-	if n := mr.CommandCount() - before; n > 2 {
+	if n := mr.CommandCount() - before; n != 1 {
 		t.Errorf("one Set issued %d commands with 100 keys present", n)
 	}
 }
 
 func TestFindingR2(t *testing.T) {
-	suppress(t, "R2")
 	mr := miniredis.RunT(t)
 	g := newGate(t, mr.Addr())
 	c := memoryCache(t, obcache.NewRedisConfig(g.addr))
@@ -229,7 +226,6 @@ func TestFindingR2(t *testing.T) {
 }
 
 func TestFindingR3(t *testing.T) {
-	suppress(t, "R3")
 	cfg, mr := miniConfig(t)
 	c := memoryCache(t, cfg)
 	if err := c.Set("k", "v", time.Hour); err != nil {
@@ -303,7 +299,6 @@ func TestFindingF3(t *testing.T) {
 }
 
 func TestFindingF6(t *testing.T) {
-	suppress(t, "F6")
 	cfg, _ := miniConfig(t)
 	c := memoryCache(t, cfg)
 	bounded(t, 20*time.Second, "concurrent Set with Keys, Len and Stats", func() {
@@ -408,5 +403,62 @@ func TestFindingZ1(t *testing.T) {
 				t.Errorf("value under MinSize stored %d bytes, plain is %d", zipped, plain)
 			}
 		})
+	}
+}
+
+type elevenFields struct {
+	A, B, C, D, E, F, G, H, I, J int
+	K                            int
+}
+
+func TestFindingK1(t *testing.T) {
+	t.Run("time.Time", func(t *testing.T) {
+		w := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(at time.Time) int64 { return at.Unix() })
+		if a, b := w(time.Unix(1000, 0)), w(time.Unix(2000, 0)); a != 1000 || b != 2000 {
+			t.Errorf("got %d, %d", a, b)
+		}
+	})
+	t.Run("long-slice", func(t *testing.T) {
+		w := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(s []int) int { return s[5] })
+		x, y := make([]int, 20), make([]int, 20)
+		y[5] = 7
+		if a, b := w(x), w(y); a != 0 || b != 7 {
+			t.Errorf("got %d, %d", a, b)
+		}
+	})
+	t.Run("large-map", func(t *testing.T) {
+		w := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(m map[string]int) int { return m["f"] })
+		x := map[string]int{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6}
+		y := map[string]int{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 9}
+		if a, b := w(x), w(y); a != 6 || b != 9 {
+			t.Errorf("got %d, %d", a, b)
+		}
+	})
+	t.Run("struct-field-eleven", func(t *testing.T) {
+		w := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(v elevenFields) int { return v.K })
+		if a, b := w(elevenFields{K: 1}), w(elevenFields{K: 2}); a != 1 || b != 2 {
+			t.Errorf("got %d, %d", a, b)
+		}
+	})
+	t.Run("byte-array", func(t *testing.T) {
+		w := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(u [16]byte) byte { return u[0] })
+		if a, b := w([16]byte{1}), w([16]byte{2}); a != 1 || b != 2 {
+			t.Errorf("got %d, %d", a, b)
+		}
+	})
+}
+
+func TestFindingK2(t *testing.T) {
+	var calls atomic.Int32
+	w := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(a, b string) string {
+		calls.Add(1)
+		return a + "/" + b
+	})
+	if x, y := w("a|1:s:b", "c"), w("a", "b|1:s:c"); x == y {
+		t.Errorf("distinct arguments shared a result: %q", x)
+	}
+	s := obcache.Wrap(memoryCache(t, obcache.NewDefaultConfig()), func(v []string) int { return len(v) })
+	if x, y := s([]string{"a,s:b"}), s([]string{"a", "b"}); x == y {
+		t.Errorf("distinct slices shared a result: %d", x)
 	}
 }

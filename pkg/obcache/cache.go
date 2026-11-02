@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -39,8 +40,7 @@ type Cache struct {
 	store  store.Store
 	stats  *Stats
 	hooks  *Hooks
-	sf     *singleflight.Group[string, any]
-	mu     sync.RWMutex
+	sf     *singleflight.Group[string, flight]
 
 	// Compression
 	compressor compression.Compressor
@@ -50,6 +50,13 @@ type Cache struct {
 	metricsLabels   metrics.Labels
 	metricsStop     chan struct{}
 	metricsWg       sync.WaitGroup
+
+	closeOnce sync.Once
+	closeErr  error
+
+	// Function identity
+	names   sync.Map // name -> nameBinding
+	wrapSeq atomic.Uint64
 }
 
 // New creates a new Cache instance with the given configuration
@@ -80,7 +87,7 @@ func New(config *Config) (*Cache, error) {
 		store:  cacheStore,
 		stats:  &Stats{},
 		hooks:  config.Hooks,
-		sf:     &singleflight.Group[string, any]{},
+		sf:     &singleflight.Group[string, flight]{},
 	}
 
 	// Initialize compression if configured
@@ -130,6 +137,12 @@ func createMemoryStore(config *Config) (store.Store, error) {
 		evictionType = eviction.LRU
 	}
 
+	switch evictionType {
+	case EvictionLRU, EvictionLFU, EvictionFIFO:
+	default:
+		return nil, fmt.Errorf("unknown eviction type %q: use EvictionLRU, EvictionLFU or EvictionFIFO", evictionType)
+	}
+
 	evictionConfig := eviction.Config{
 		Type:     evictionType,
 		Capacity: config.MaxEntries,
@@ -141,6 +154,14 @@ func createMemoryStore(config *Config) (store.Store, error) {
 	}
 	return memory.NewWithStrategy(evictionConfig)
 }
+
+// A cache must not turn a hung Redis into a hung caller: without these, go-redis
+// ignores ctx deadlines and retries for seconds on a silent connection.
+const (
+	redisDialTimeout = time.Second
+	redisIOTimeout   = 250 * time.Millisecond
+	redisMaxRetries  = 1
+)
 
 // createRedisStore creates a Redis-based store
 func createRedisStore(config *Config) (store.Store, error) {
@@ -160,9 +181,14 @@ func createRedisStore(config *Config) (store.Store, error) {
 	} else {
 		// Create Redis client from connection parameters
 		client := redis.NewClient(&redis.Options{
-			Addr:     config.Redis.Addr,
-			Password: config.Redis.Password,
-			DB:       config.Redis.DB,
+			Addr:                  config.Redis.Addr,
+			Password:              config.Redis.Password,
+			DB:                    config.Redis.DB,
+			ContextTimeoutEnabled: true,
+			DialTimeout:           redisDialTimeout,
+			ReadTimeout:           redisIOTimeout,
+			WriteTimeout:          redisIOTimeout,
+			MaxRetries:            redisMaxRetries,
 		})
 
 		// Test the connection
@@ -191,30 +217,20 @@ func (c *Cache) GetContext(ctx context.Context, key string) (any, bool) {
 		c.recordCacheOperation(metrics.OperationGet, time.Since(start))
 	}()
 
-	var result any
-	var found bool
-
-	c.mu.RLock()
-	entry, ok := c.store.Get(key)
+	entry, ok := c.store.Get(ctx, key)
 	if !ok {
-		c.mu.RUnlock()
 		c.miss(ctx, key)
-		return result, found
+		return nil, false
 	}
 
 	value, err := c.decompressValue(entry)
 	if err != nil {
-		c.mu.RUnlock()
 		c.miss(ctx, key)
-		return result, found
+		return nil, false
 	}
 
 	c.hit(ctx, key, value)
-	result = value
-	found = true
-	c.mu.RUnlock()
-
-	return result, found
+	return value, true
 }
 
 // Set stores a value in the cache with the specified key and TTL
@@ -240,14 +256,7 @@ func (c *Cache) SetContext(ctx context.Context, key string, value any, ttl time.
 		return fmt.Errorf("failed to create entry: %w", err)
 	}
 
-	c.mu.Lock()
-	setErr := c.store.Set(key, entry)
-	if setErr == nil {
-		c.updateKeyCount()
-	}
-	c.mu.Unlock()
-
-	return setErr
+	return c.store.Set(ctx, key, entry)
 }
 
 // Put stores a value using the default TTL
@@ -259,16 +268,13 @@ func (c *Cache) Put(key string, value any) error {
 func (c *Cache) Delete(key string) error {
 	ctx := context.Background()
 
-	c.mu.Lock()
 	err := c.store.Delete(key)
 	if err == nil {
 		c.stats.incInvalidations()
-		c.updateKeyCount()
 		if c.hooks != nil {
 			c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
 		}
 	}
-	c.mu.Unlock()
 
 	return err
 }
@@ -277,7 +283,6 @@ func (c *Cache) Delete(key string) error {
 func (c *Cache) Clear() error {
 	ctx := context.Background()
 
-	c.mu.Lock()
 	keys := c.store.Keys()
 	err := c.store.Clear()
 	if err == nil {
@@ -287,9 +292,7 @@ func (c *Cache) Clear() error {
 				c.hooks.invokeOnInvalidateWithCtx(ctx, key, nil)
 			}
 		}
-		c.updateKeyCount()
 	}
-	c.mu.Unlock()
 
 	return err
 }
@@ -302,35 +305,23 @@ func (c *Cache) Stats() *Stats {
 
 // Keys returns all current cache keys
 func (c *Cache) Keys() []string {
-	c.mu.RLock()
-	keys := c.store.Keys()
-	c.mu.RUnlock()
-	return keys
+	return c.store.Keys()
 }
 
 // Len returns the current number of entries in the cache
 func (c *Cache) Len() int {
-	c.mu.RLock()
-	length := c.store.Len()
-	c.mu.RUnlock()
-	return length
+	return c.store.Len()
 }
 
 // Has checks if a key exists in the cache
 func (c *Cache) Has(key string) bool {
-	c.mu.RLock()
-	entry, found := c.store.Get(key)
-	exists := found && !entry.IsExpired()
-	c.mu.RUnlock()
-	return exists
+	entry, found := c.store.Get(context.Background(), key)
+	return found && !entry.IsExpired()
 }
 
 // TTL returns the remaining TTL for a key
 func (c *Cache) TTL(key string) (time.Duration, bool) {
-	c.mu.RLock()
-	entry, ok := c.store.Get(key)
-	c.mu.RUnlock()
-
+	entry, ok := c.store.Get(context.Background(), key)
 	if ok && !entry.IsExpired() {
 		return entry.TTL(), true
 	}
@@ -339,43 +330,31 @@ func (c *Cache) TTL(key string) (time.Duration, bool) {
 
 // Close closes the cache and cleans up resources
 func (c *Cache) Close() error {
-	c.mu.Lock()
-	if c.metricsStop != nil {
-		close(c.metricsStop)
-		c.metricsWg.Wait()
-	}
-	if c.metricsExporter != nil {
-		_ = c.metricsExporter.Close() // Ignore error on shutdown
-	}
-	err := c.store.Close()
-	c.mu.Unlock()
-	return err
+	c.closeOnce.Do(func() {
+		if c.metricsStop != nil {
+			close(c.metricsStop)
+			c.metricsWg.Wait()
+		}
+		if c.metricsExporter != nil {
+			_ = c.metricsExporter.Close() // Ignore error on shutdown
+		}
+		c.closeErr = c.store.Close()
+	})
+	return c.closeErr
 }
 
 // Cleanup removes expired entries and returns count removed
 func (c *Cache) Cleanup() int {
-	c.mu.Lock()
-	var removed int
 	if store, ok := c.store.(store.TTLStore); ok {
-		removed = store.Cleanup()
-		c.updateKeyCount()
+		return store.Cleanup()
 	}
-	c.mu.Unlock()
-	return removed
+	return 0
 }
 
 // updateKeyCount updates the key count statistic
 func (c *Cache) updateKeyCount() {
 	count := int64(c.store.Len())
 	c.stats.setKeyCount(count)
-}
-
-// getKeyGenFunc returns the key generation function to use
-func (c *Cache) getKeyGenFunc() KeyGenFunc {
-	if c.config.KeyGenFunc != nil {
-		return c.config.KeyGenFunc
-	}
-	return DefaultKeyFunc
 }
 
 // createCompressedEntry creates a cache entry with compression if applicable
@@ -551,6 +530,7 @@ func (c *Cache) metricsReporter() {
 
 // exportCurrentStats exports the current statistics to metrics
 func (c *Cache) exportCurrentStats() {
+	c.updateKeyCount()
 	if c.metricsExporter != nil {
 		_ = c.metricsExporter.ExportStats(c.stats, c.metricsLabels) //nolint:errcheck // Error handling done at higher level
 	}

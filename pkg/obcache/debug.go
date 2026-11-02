@@ -59,6 +59,7 @@ func (c *Cache) DebugHandler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 
 		var response DebugResponse
+		c.updateKeyCount() // writes no longer maintain it
 		includeKeys := r.URL.Path == "/" || r.URL.Path == "/keys"
 
 		// Collect statistics
@@ -80,12 +81,11 @@ func (c *Cache) DebugHandler() http.Handler {
 
 		// Collect keys if requested
 		if includeKeys {
-			c.mu.RLock()
 			keys := c.store.Keys()
 			response.Keys = make([]DebugKey, 0, len(keys))
 
 			for _, key := range keys {
-				if entry, found := c.store.Get(key); found {
+				if entry, found := c.store.Get(r.Context(), key); found {
 					debugKey := DebugKey{
 						Key:       key,
 						Value:     entry.Value,
@@ -106,7 +106,6 @@ func (c *Cache) DebugHandler() http.Handler {
 					response.Keys = append(response.Keys, debugKey)
 				}
 			}
-			c.mu.RUnlock()
 		}
 
 		// Write JSON response

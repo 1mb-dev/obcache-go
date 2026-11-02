@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -21,7 +20,6 @@ type Store struct {
 	defaultTTL      time.Duration
 	evictCallback   store.EvictCallback
 	cleanupCallback store.EvictCallback
-	mu              sync.RWMutex
 	ctx             context.Context
 }
 
@@ -75,12 +73,9 @@ func New(config *Config) (*Store, error) {
 }
 
 // Get retrieves an entry by key
-func (s *Store) Get(key string) (*entry.Entry, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+func (s *Store) Get(ctx context.Context, key string) (*entry.Entry, bool) {
 	redisKey := s.buildKey(key)
-	result := s.client.Get(s.ctx, redisKey)
+	result := s.client.Get(ctx, redisKey)
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
 			return nil, false // Key not found
@@ -97,14 +92,14 @@ func (s *Store) Get(key string) (*entry.Entry, bool) {
 	entry, err := s.deserializeEntry([]byte(data))
 	if err != nil {
 		// If deserialization fails, remove the corrupted key
-		s.client.Del(s.ctx, redisKey)
+		s.client.Del(ctx, redisKey)
 		return nil, false
 	}
 
 	// Check if entry has expired
 	if entry.IsExpired() {
 		// Remove expired entry
-		s.client.Del(s.ctx, redisKey)
+		s.client.Del(ctx, redisKey)
 
 		// Call cleanup callback if set
 		if s.cleanupCallback != nil {
@@ -113,36 +108,23 @@ func (s *Store) Get(key string) (*entry.Entry, bool) {
 		return nil, false
 	}
 
-	// Update last access time and save back to Redis
-	entry.Touch()
-	_ = s.saveEntryToRedis(redisKey, entry)
-
 	return entry, true
 }
 
 // Set stores an entry with the given key
-func (s *Store) Set(key string, entry *entry.Entry) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Store) Set(ctx context.Context, key string, entry *entry.Entry) error {
 	redisKey := s.buildKey(key)
-	return s.saveEntryToRedis(redisKey, entry)
+	return s.saveEntryToRedis(ctx, redisKey, entry)
 }
 
 // Delete removes an entry by key
 func (s *Store) Delete(key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	redisKey := s.buildKey(key)
 	return s.client.Del(s.ctx, redisKey).Err()
 }
 
 // Keys returns all keys currently in the store
 func (s *Store) Keys() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	pattern := s.buildKey("*")
 	result := s.client.Keys(s.ctx, pattern)
 	if result.Err() != nil {
@@ -154,16 +136,9 @@ func (s *Store) Keys() []string {
 		return []string{}
 	}
 
-	// Convert Redis keys back to cache keys and filter expired entries
 	cacheKeys := make([]string, 0, len(redisKeys))
 	for _, redisKey := range redisKeys {
-		cacheKey := s.extractKey(redisKey)
-		if cacheKey == "" {
-			continue
-		}
-
-		// Check if the entry is valid (not expired)
-		if _, found := s.Get(cacheKey); found {
+		if cacheKey := s.extractKey(redisKey); cacheKey != "" {
 			cacheKeys = append(cacheKeys, cacheKey)
 		}
 	}
@@ -178,9 +153,6 @@ func (s *Store) Len() int {
 
 // Clear removes all entries from the store
 func (s *Store) Clear() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	pattern := s.buildKey("*")
 	result := s.client.Keys(s.ctx, pattern)
 	if result.Err() != nil {
@@ -208,15 +180,11 @@ func (s *Store) Close() error {
 
 // SetEvictCallback sets the callback for evictions (not applicable for Redis)
 func (s *Store) SetEvictCallback(callback store.EvictCallback) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.evictCallback = callback
 }
 
 // SetCleanupCallback sets the callback for TTL cleanup
 func (s *Store) SetCleanupCallback(callback store.EvictCallback) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.cleanupCallback = callback
 }
 
@@ -294,7 +262,7 @@ func (s *Store) deserializeEntry(data []byte) (*entry.Entry, error) {
 }
 
 // saveEntryToRedis saves an entry to Redis with appropriate TTL
-func (s *Store) saveEntryToRedis(redisKey string, e *entry.Entry) error {
+func (s *Store) saveEntryToRedis(ctx context.Context, redisKey string, e *entry.Entry) error {
 	data, err := s.serializeEntry(e)
 	if err != nil {
 		return err
@@ -306,7 +274,7 @@ func (s *Store) saveEntryToRedis(redisKey string, e *entry.Entry) error {
 		remaining := e.TTL()
 		if remaining <= 0 {
 			// Entry has already expired
-			return s.client.Del(s.ctx, redisKey).Err()
+			return s.client.Del(ctx, redisKey).Err()
 		}
 		redisTTL = remaining
 	} else if s.defaultTTL > 0 {
@@ -315,9 +283,9 @@ func (s *Store) saveEntryToRedis(redisKey string, e *entry.Entry) error {
 	}
 
 	if redisTTL > 0 {
-		return s.client.SetEx(s.ctx, redisKey, string(data), redisTTL).Err()
+		return s.client.SetEx(ctx, redisKey, string(data), redisTTL).Err()
 	}
-	return s.client.Set(s.ctx, redisKey, string(data), 0).Err()
+	return s.client.Set(ctx, redisKey, string(data), 0).Err()
 }
 
 // Ensure Store implements the required interfaces

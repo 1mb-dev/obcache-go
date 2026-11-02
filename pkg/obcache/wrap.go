@@ -2,9 +2,14 @@ package obcache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
+	"strings"
 	"time"
+
+	"github.com/1mb-dev/obcache-go/v2/internal/singleflight"
 )
 
 // cachedError represents an error that has been cached
@@ -19,6 +24,9 @@ type WrapOptions struct {
 
 	// KeyFunc overrides the default key generation function
 	KeyFunc KeyGenFunc
+
+	// Name is the wrapped function's stable identity within the cache
+	Name string
 
 	// DisableCache disables caching for this function (useful for testing)
 	DisableCache bool
@@ -48,6 +56,16 @@ func WithKeyFunc(keyFunc KeyGenFunc) WrapOption {
 	}
 }
 
+// WithName names the wrapped function: its entries are keyed "name|args". A name
+// binds one Wrap, and only a top-level function may Wrap under it again, so a
+// closure or method value is wrapped once, at setup. For a per-request Wrap, use
+// WithKeyFunc. A name must not contain '|' or '#'.
+func WithName(name string) WrapOption {
+	return func(opts *WrapOptions) {
+		opts.Name = name
+	}
+}
+
 // WithoutCache disables caching for the wrapped function
 func WithoutCache() WrapOption {
 	return func(opts *WrapOptions) {
@@ -73,10 +91,7 @@ func WithErrorTTL(ttl time.Duration) WrapOption {
 // Wrap wraps any function with caching using Go generics
 // T must be a function type
 func Wrap[T any](cache *Cache, fn T, options ...WrapOption) T {
-	opts := &WrapOptions{
-		TTL:     cache.config.DefaultTTL,
-		KeyFunc: cache.getKeyGenFunc(),
-	}
+	opts := &WrapOptions{TTL: cache.config.DefaultTTL}
 
 	for _, opt := range options {
 		opt(opts)
@@ -95,32 +110,255 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 		panic("obcache.Wrap: argument must be a function")
 	}
 
+	keyOf, err := cache.bindKey(fnValue, fnType, opts)
+	if err != nil {
+		panic("obcache.Wrap: " + err.Error())
+	}
+
 	// Create the wrapper function
 	wrapper := reflect.MakeFunc(fnType, func(args []reflect.Value) []reflect.Value {
-		return executeWrappedFunction(cache, fnValue, fnType, opts, args)
+		return executeWrappedFunction(cache, fnValue, fnType, opts, keyOf, args)
 	})
 
 	return wrapper.Interface().(T)
 }
 
-// executeWrappedFunction handles the core wrapping logic
-func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value) []reflect.Value {
-	ctx, keyArgs := extractContextAndArgs(fnType, args)
-	key := opts.KeyFunc(keyArgs)
+// writeBudget bounds the store write after a call. The computed value outlives its
+// caller's deadline, and waiters sit behind this write, so it gets its own limit.
+const writeBudget = 250 * time.Millisecond
 
+// maxAbortRetries is how many aborted leaders a caller waits behind before it
+// calls the function itself.
+const maxAbortRetries = 2
+
+// flight is what a singleflight leader shares with its waiters.
+type flight struct {
+	results       []reflect.Value
+	leaderCtxDone bool
+}
+
+// keyBinding turns a call's arguments into a key, or reports that they have none.
+type keyBinding func(args []any) (string, bool)
+
+type nameBinding struct {
+	pc uintptr
+	t  reflect.Type
+}
+
+// bindKey resolves the function's identity once, at Wrap time. Failure is loud or
+// cold, never a read of another function's entries.
+func (c *Cache) bindKey(fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions) (keyBinding, error) {
+	if opts.KeyFunc != nil {
+		if opts.Name != "" {
+			return nil, errors.New("WithName and WithKeyFunc are mutually exclusive")
+		}
+		return func(args []any) (string, bool) { return callKeyFunc(opts.KeyFunc, args) }, nil
+	}
+
+	// Checks come before identity binds a name, so a refused Wrap leaves no name.
+	if !opts.DisableCache && c.config.KeyGenFunc == nil {
+		if err := checkParams(fnType); err != nil {
+			return nil, err
+		}
+	}
+	name, err := c.identity(fnValue, fnType, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.DisableCache {
+		return nil, nil // nothing is keyed or stored
+	}
+	return func(args []any) (string, bool) { return c.keyFor(name, args) }, nil
+}
+
+// identity returns the name a wrapped function keys under, binding it if it is
+// stable. A name that cannot be trusted across Wraps gets a fresh id, so its
+// entries go cold rather than cross.
+func (c *Cache) identity(fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions) (string, error) {
+	pc := fnValue.Pointer()
+	fnName := runtime.FuncForPC(pc).Name()
+	name := opts.Name
+
+	if name == "" {
+		if opts.DisableCache {
+			return "", nil
+		}
+		if !isTopLevel(fnName) {
+			return fmt.Sprintf("#%d", c.wrapSeq.Add(1)), nil
+		}
+		name = fnName
+	} else if strings.ContainsAny(name, "|#") {
+		return "", fmt.Errorf("name %q must not contain '|' or '#'", name)
+	}
+
+	binding := nameBinding{pc, fnType}
+	if prev, loaded := c.names.LoadOrStore(name, binding); loaded && (prev != binding || !isTopLevel(fnName)) {
+		return "", fmt.Errorf("name %q is already bound: Wrap once at setup, or use WithKeyFunc", name)
+	}
+	return name, nil
+}
+
+// isTopLevel reports whether a runtime function name is pkg.Func. Closures, method
+// values, method expressions and generics all carry a suffix, and reflect.MakeFunc
+// results report a reflect name, so anything else falls to a per-Wrap id.
+func isTopLevel(name string) bool {
+	base := name[strings.LastIndexByte(name, '/')+1:]
+	return strings.Count(base, ".") == 1 && !strings.ContainsAny(base, "[-(") && !strings.HasPrefix(base, "reflect.")
+}
+
+func (c *Cache) keyFor(name string, args []any) (string, bool) {
+	keyFunc := c.config.KeyGenFunc
+	if keyFunc == nil {
+		keyFunc = DefaultKeyFunc
+	}
+	key, ok := callKeyFunc(keyFunc, args)
+	if !ok {
+		return "", false
+	}
+	return name + "|" + key, true
+}
+
+// Key returns the key a Wrap with WithName(name) stores args under, for use with
+// Delete. It panics on a name no Wrap bound in this Cache and on args that differ
+// from the wrapped function's parameters, because either would make Delete a
+// silent no-op. A process that only invalidates binds the name with one uncalled
+// Wrap of a function with the same signature.
+func (c *Cache) Key(name string, args ...any) string {
+	bound, ok := c.names.Load(name)
+	if !ok {
+		panic(fmt.Sprintf("obcache.Key: no Wrap named %q in this Cache; Wrap a function with this signature under WithName(%q)", name, name))
+	}
+	if err := checkKeyArgs(bound.(nameBinding).t, args); err != nil {
+		panic(fmt.Sprintf("obcache.Key(%q): %v", name, err))
+	}
+	key, ok := c.keyFor(name, args)
+	if !ok {
+		panic(fmt.Sprintf("obcache.Key(%q): args have no key encoding", name))
+	}
+	return key
+}
+
+func checkKeyArgs(fnType reflect.Type, args []any) error {
+	offset := 0
+	if fnType.NumIn() > 0 && fnType.In(0) == contextType {
+		offset = 1
+	}
+	if len(args) != fnType.NumIn()-offset {
+		return fmt.Errorf("got %d args, the wrapped function takes %d", len(args), fnType.NumIn()-offset)
+	}
+	for i, arg := range args {
+		want := fnType.In(i + offset)
+		if want.Kind() == reflect.Interface {
+			continue
+		}
+		if got := reflect.TypeOf(arg); got != want {
+			return fmt.Errorf("arg %d is %v, the wrapped function takes %v", i, got, want)
+		}
+	}
+	return nil
+}
+
+// executeWrappedFunction handles the core wrapping logic
+func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, keyOf keyBinding, args []reflect.Value) []reflect.Value {
 	// If caching is disabled, call original function directly
 	if opts.DisableCache {
-		return fnValue.Call(args)
+		return call(fnValue, fnType, args)
 	}
 
-	hasErrorReturn := hasErrorReturn(fnType)
-
-	// Try to get from cache first using context
-	if cachedValue, found := cache.GetContext(ctx, key); found {
-		return convertCachedValue(cachedValue, fnType, hasErrorReturn)
+	ctx, keyArgs := extractContextAndArgs(fnType, args)
+	key, ok := keyOf(keyArgs)
+	if !ok {
+		return call(fnValue, fnType, args) // a value with no encoding runs uncached
 	}
 
-	return executeFunctionWithSingleflight(cache, ctx, fnValue, fnType, opts, args, key, hasErrorReturn)
+	hasErr := hasErrorReturn(fnType)
+
+	store := func(value any, ttl time.Duration) {
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeBudget)
+		defer cancel()
+		_ = cache.SetContext(writeCtx, key, value, ttl)
+	}
+
+	// The write happens here so it runs exactly once, whether or not anyone is waiting.
+	compute := func() flight {
+		results := call(fnValue, fnType, args)
+		if hasErr && !results[len(results)-1].IsNil() {
+			if ctx.Err() != nil {
+				// The leader's own cancellation, whatever the function wrapped it in.
+				return flight{results: results, leaderCtxDone: true}
+			}
+			if opts.CacheErrors {
+				errorTTL := opts.ErrorTTL
+				if errorTTL == 0 {
+					errorTTL = opts.TTL
+				}
+				store(cachedError{Err: results[len(results)-1].Interface().(error)}, errorTTL)
+			}
+			return flight{results: results}
+		}
+		if !hasErr && ctx.Err() != nil {
+			// With no error to say so, a result computed under cancellation may be
+			// partial. It goes to the leader only.
+			return flight{results: results, leaderCtxDone: true}
+		}
+		store(storedValue(results, valueCount(fnType)), opts.TTL)
+		return flight{results: results}
+	}
+
+	// Reporting a wait timeout needs a result that can hold ctx.Err(). A function
+	// returning a concrete error type has none, so its waiters keep waiting.
+	waitCtx := ctx
+	if !hasErr || !errorType.AssignableTo(fnType.Out(fnType.NumOut()-1)) {
+		waitCtx = context.Background()
+	}
+
+	cache.stats.incInFlight()
+	defer cache.stats.decInFlight()
+
+	for aborts := 0; ; aborts++ {
+		if cachedValue, found := cache.GetContext(ctx, key); found {
+			if results, ok := cachedResults(cachedValue, fnType, hasErr); ok {
+				return results
+			}
+		}
+		if aborts == maxAbortRetries {
+			// Queueing behind leaders that keep failing is worse than no cache.
+			return compute().results
+		}
+		f, leader, err := cache.sf.Do(waitCtx, key, compute)
+		switch {
+		case errors.Is(err, singleflight.ErrAborted):
+			continue
+		case err != nil:
+			return createErrorReturn(fnType, err)
+		case f.leaderCtxDone && !leader && ctx.Err() == nil:
+			continue
+		case !leader && !fits(f.results, fnType):
+			// Another function's flight under the same key, possible with WithKeyFunc.
+			continue
+		}
+		return f.results
+	}
+}
+
+// fits reports whether shared results can be returned from a function of fnType.
+func fits(results []reflect.Value, fnType reflect.Type) bool {
+	if len(results) != fnType.NumOut() {
+		return false
+	}
+	for i, r := range results {
+		if !r.Type().AssignableTo(fnType.Out(i)) {
+			return false
+		}
+	}
+	return true
+}
+
+func call(fnValue reflect.Value, fnType reflect.Type, args []reflect.Value) []reflect.Value {
+	if fnType.IsVariadic() {
+		return fnValue.CallSlice(args)
+	}
+	return fnValue.Call(args)
 }
 
 // extractContextAndArgs extracts context and key args from function arguments
@@ -129,9 +367,11 @@ func extractContextAndArgs(fnType reflect.Type, args []reflect.Value) (context.C
 	var keyArgs []any
 
 	// Detect context.Context as first parameter
-	if len(args) > 0 && fnType.In(0).String() == "context.Context" {
-		// First parameter is context.Context
-		ctx = args[0].Interface().(context.Context)
+	if len(args) > 0 && fnType.In(0) == contextType {
+		// A nil context is possible: the parameter is an interface.
+		if c, ok := args[0].Interface().(context.Context); ok {
+			ctx = c
+		}
 		// Use remaining args for key generation
 		keyArgs = make([]any, len(args)-1)
 		for i := 1; i < len(args); i++ {
@@ -148,162 +388,87 @@ func extractContextAndArgs(fnType reflect.Type, args []reflect.Value) (context.C
 	return ctx, keyArgs
 }
 
-// hasErrorReturn checks if function returns error as last parameter
+var (
+	errorType   = reflect.TypeFor[error]()
+	contextType = reflect.TypeFor[context.Context]()
+)
+
+// hasErrorReturn reports whether the last result is an error. A struct error type
+// has no "no error" value, so it counts as an ordinary result.
 func hasErrorReturn(fnType reflect.Type) bool {
-	return fnType.NumOut() >= 2 &&
-		fnType.Out(fnType.NumOut()-1).Implements(reflect.TypeOf((*error)(nil)).Elem())
+	n := fnType.NumOut()
+	if n == 0 {
+		return false
+	}
+	last := fnType.Out(n - 1)
+	return last.Implements(errorType) && (last.Kind() == reflect.Interface || last.Kind() == reflect.Pointer)
 }
 
-// executeFunctionWithSingleflight executes the function with singleflight pattern
-func executeFunctionWithSingleflight(cache *Cache, ctx context.Context, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value, key string, hasErrorReturn bool) []reflect.Value {
-	// Use singleflight to prevent duplicate calls
-	compute := func() (any, error) {
-		results := fnValue.Call(args)
-		return processResults(results, hasErrorReturn)
+// valueCount is the number of results excluding a trailing error.
+func valueCount(fnType reflect.Type) int {
+	if hasErrorReturn(fnType) {
+		return fnType.NumOut() - 1
 	}
-
-	// Execute with singleflight
-	cache.stats.incInFlight()
-	defer cache.stats.decInFlight()
-
-	value, err, shared := cache.sf.Do(key, compute)
-
-	if err != nil {
-		// Cache errors if enabled
-		if opts.CacheErrors && !shared {
-			errorTTL := opts.ErrorTTL
-			if errorTTL == 0 {
-				errorTTL = opts.TTL
-			}
-			_ = cache.SetContext(ctx, key, cachedError{Err: err}, errorTTL) // Cache error with context
-		}
-		// Return the error in the function's expected format
-		return createErrorReturn(fnType, err)
-	}
-
-	// Store in cache if this wasn't a shared call
-	if !shared {
-		_ = cache.SetContext(ctx, key, value, opts.TTL) // Cache result with context
-	}
-
-	// Convert the result back to the expected format
-	return convertComputedValue(value, fnType, hasErrorReturn)
+	return fnType.NumOut()
 }
 
-// processResults processes function results for caching
-func processResults(results []reflect.Value, hasErrorReturn bool) (any, error) {
-	if hasErrorReturn {
-		return processResultsWithError(results)
+// storedValue is the form results take in the store and in hooks.
+func storedValue(results []reflect.Value, n int) any {
+	switch n {
+	case 0:
+		return nil
+	case 1:
+		return results[0].Interface()
 	}
-	return processResultsWithoutError(results)
-}
-
-// processResultsWithError handles results from functions that return error
-func processResultsWithError(results []reflect.Value) (any, error) {
-	// Handle (T, error) return pattern
-	errResult := results[len(results)-1]
-	if !errResult.IsNil() {
-		// Return error for conditional caching (handled in caller)
-		return nil, errResult.Interface().(error)
-	}
-
-	// Cache the successful result (all values except error)
-	if len(results) == 2 {
-		// Single value + error
-		return results[0].Interface(), nil
-	}
-	// Multiple values + error
-	values := make([]any, len(results)-1)
-	for i := 0; i < len(results)-1; i++ {
+	values := make([]any, n)
+	for i := range n {
 		values[i] = results[i].Interface()
 	}
-	return values, nil
+	return values
 }
 
-// processResultsWithoutError handles results from functions without error return
-func processResultsWithoutError(results []reflect.Value) (any, error) {
-	if len(results) == 1 {
-		return results[0].Interface(), nil
-	}
-	// Multiple return values
-	values := make([]any, len(results))
-	for i, result := range results {
-		values[i] = result.Interface()
-	}
-	return values, nil
-}
-
-// convertCachedValue converts a cached value back to the expected return format
-func convertCachedValue(cachedValue any, fnType reflect.Type, hasErrorReturn bool) []reflect.Value {
-	// Check if this is a cached error
-	if ce, ok := cachedValue.(cachedError); ok {
-		return createErrorReturn(fnType, ce.Err)
-	}
-
-	numOut := fnType.NumOut()
-	results := make([]reflect.Value, numOut)
-
-	if hasErrorReturn {
-		// Set error to nil
-		results[numOut-1] = reflect.Zero(fnType.Out(numOut - 1))
-
-		if numOut == 2 {
-			// Single value + error
-			results[0] = reflect.ValueOf(cachedValue)
-		} else {
-			// Multiple values + error
-			values := cachedValue.([]any)
-			for i := 0; i < numOut-1; i++ {
-				results[i] = reflect.ValueOf(values[i])
-			}
+// cachedResults rebuilds a call's results from a stored value. A value that does
+// not fit the function's results is a miss, never a panic.
+func cachedResults(v any, fnType reflect.Type, hasErr bool) ([]reflect.Value, bool) {
+	if ce, isErr := v.(cachedError); isErr {
+		if !hasErr {
+			return nil, false
 		}
-	} else {
-		// No error return
-		if numOut == 1 {
-			results[0] = reflect.ValueOf(cachedValue)
-		} else {
-			values := cachedValue.([]any)
-			for i, value := range values {
-				results[i] = reflect.ValueOf(value)
-			}
+		return createErrorReturn(fnType, ce.Err), true
+	}
+
+	results := make([]reflect.Value, fnType.NumOut())
+	if hasErr {
+		results[len(results)-1] = reflect.Zero(fnType.Out(len(results) - 1))
+	}
+	n := valueCount(fnType)
+	if n == 0 {
+		return results, true
+	}
+	values := []any{v}
+	if n > 1 {
+		var ok bool
+		if values, ok = v.([]any); !ok || len(values) != n {
+			return nil, false
 		}
 	}
-
-	return results
-}
-
-// convertComputedValue converts a computed value to the expected return format
-func convertComputedValue(value any, fnType reflect.Type, hasErrorReturn bool) []reflect.Value {
-	numOut := fnType.NumOut()
-	results := make([]reflect.Value, numOut)
-
-	if hasErrorReturn {
-		// Set error to nil (since we only cache successful results)
-		results[numOut-1] = reflect.Zero(fnType.Out(numOut - 1))
-
-		if numOut == 2 {
-			// Single value + error
-			results[0] = reflect.ValueOf(value)
-		} else {
-			// Multiple values + error
-			values := value.([]any)
-			for i := 0; i < numOut-1; i++ {
-				results[i] = reflect.ValueOf(values[i])
+	for i := range n {
+		t := fnType.Out(i)
+		if values[i] == nil {
+			switch t.Kind() {
+			case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+				results[i] = reflect.Zero(t)
+				continue
 			}
+			return nil, false
 		}
-	} else {
-		// No error return
-		if numOut == 1 {
-			results[0] = reflect.ValueOf(value)
-		} else {
-			values := value.([]any)
-			for i, value := range values {
-				results[i] = reflect.ValueOf(value)
-			}
+		rv := reflect.ValueOf(values[i])
+		if !rv.Type().AssignableTo(t) {
+			return nil, false
 		}
+		results[i] = rv.Convert(t)
 	}
-
-	return results
+	return results, true
 }
 
 // createErrorReturn creates a return value slice with the given error
@@ -367,33 +532,12 @@ func WrapFunc2WithError[T1, T2, R any](cache *Cache, fn func(T1, T2) (R, error),
 	return Wrap(cache, fn, options...)
 }
 
-// ValidateWrappableFunction checks if a function can be wrapped
-// This is useful for providing better error messages at runtime
+// ValidateWrappableFunction reports what Wrap would refuse about fn with any store.
+// Refusals that depend on the store, such as return types on Redis, need a Cache.
 func ValidateWrappableFunction(fn any) error {
 	fnType := reflect.TypeOf(fn)
-
-	if fnType.Kind() != reflect.Func {
+	if fnType == nil || fnType.Kind() != reflect.Func {
 		return fmt.Errorf("not a function: %T", fn)
 	}
-
-	// Check if function is variadic (not currently supported)
-	if fnType.IsVariadic() {
-		return fmt.Errorf("variadic functions are not currently supported")
-	}
-
-	// Validate return types
-	numOut := fnType.NumOut()
-	if numOut == 0 {
-		return fmt.Errorf("functions with no return values cannot be cached")
-	}
-
-	// If there are multiple returns, the last one should be error
-	if numOut > 1 {
-		lastOut := fnType.Out(numOut - 1)
-		if !lastOut.Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-			return fmt.Errorf("multi-return functions must have error as the last return value")
-		}
-	}
-
-	return nil
+	return checkParams(fnType)
 }

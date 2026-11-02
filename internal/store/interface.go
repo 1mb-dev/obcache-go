@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+
 	"github.com/1mb-dev/obcache-go/v2/internal/entry"
 )
 
@@ -9,11 +11,11 @@ import (
 type Store interface {
 	// Get retrieves an entry by key
 	// Returns the entry and true if found, nil and false if not found
-	Get(key string) (*entry.Entry, bool)
+	Get(ctx context.Context, key string) (*entry.Entry, bool)
 
 	// Set stores an entry with the given key
 	// Returns an error if the operation fails
-	Set(key string, entry *entry.Entry) error
+	Set(ctx context.Context, key string, entry *entry.Entry) error
 
 	// Delete removes an entry by key
 	// Returns an error if the operation fails

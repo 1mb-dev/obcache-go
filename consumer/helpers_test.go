@@ -6,7 +6,6 @@ package consumer
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -29,9 +28,7 @@ func suppress(t *testing.T, id string) {
 
 // opts is the single place every Wrap in this module gets its identity from.
 func opts(name string) []obcache.WrapOption {
-	return []obcache.WrapOption{obcache.WithKeyFunc(func(args []any) string {
-		return fmt.Sprintf("%s|%v", name, args)
-	})}
+	return []obcache.WrapOption{obcache.WithName(name)}
 }
 
 // readmeCompression is the literal config README.md documents.

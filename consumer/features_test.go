@@ -84,6 +84,12 @@ func TestFeatureEviction(t *testing.T) {
 	}
 }
 
+func TestEvictionConstantsAreImportable(t *testing.T) {
+	for _, strategy := range []obcache.EvictionType{obcache.EvictionLRU, obcache.EvictionLFU, obcache.EvictionFIFO} {
+		memoryCache(t, obcache.NewDefaultConfig().WithEvictionType(strategy))
+	}
+}
+
 func TestFeatureThreadSafety(t *testing.T) {
 	c := memoryCache(t, obcache.NewDefaultConfig().WithMaxEntries(50))
 	var wg sync.WaitGroup
