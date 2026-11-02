@@ -39,7 +39,7 @@ type Cache struct {
 	store  store.Store
 	stats  *Stats
 	hooks  *Hooks
-	sf     *singleflight.Group[string, any]
+	sf     *singleflight.Group[string, flight]
 
 	// Compression
 	compressor compression.Compressor
@@ -82,7 +82,7 @@ func New(config *Config) (*Cache, error) {
 		store:  cacheStore,
 		stats:  &Stats{},
 		hooks:  config.Hooks,
-		sf:     &singleflight.Group[string, any]{},
+		sf:     &singleflight.Group[string, flight]{},
 	}
 
 	// Initialize compression if configured

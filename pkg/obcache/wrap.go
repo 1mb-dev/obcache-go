@@ -103,6 +103,20 @@ func wrapFunction[T any](cache *Cache, fn T, opts *WrapOptions) T {
 	return wrapper.Interface().(T)
 }
 
+// writeBudget bounds the store write after a call. The computed value outlives its
+// caller's deadline, and waiters sit behind this write, so it gets its own limit.
+const writeBudget = 250 * time.Millisecond
+
+// maxAbortRetries is how many aborted leaders a caller waits behind before it
+// calls the function itself.
+const maxAbortRetries = 2
+
+// flight is what a singleflight leader shares with its waiters.
+type flight struct {
+	value any
+	err   error
+}
+
 // executeWrappedFunction handles the core wrapping logic
 func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value) []reflect.Value {
 	ctx, keyArgs := extractContextAndArgs(fnType, args)
@@ -115,12 +129,56 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 
 	hasErrorReturn := hasErrorReturn(fnType)
 
-	// Try to get from cache first using context
-	if cachedValue, found := cache.GetContext(ctx, key); found {
-		return convertCachedValue(cachedValue, fnType, hasErrorReturn)
+	store := func(value any, ttl time.Duration) {
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeBudget)
+		defer cancel()
+		_ = cache.SetContext(writeCtx, key, value, ttl)
 	}
 
-	return executeFunctionWithSingleflight(cache, ctx, fnValue, fnType, opts, args, key, hasErrorReturn)
+	// The write happens here so it runs exactly once, whether or not anyone is waiting.
+	compute := func() flight {
+		value, err := processResults(fnValue.Call(args), hasErrorReturn)
+		if err != nil {
+			if opts.CacheErrors {
+				errorTTL := opts.ErrorTTL
+				if errorTTL == 0 {
+					errorTTL = opts.TTL
+				}
+				store(cachedError{Err: err}, errorTTL)
+			}
+			return flight{err: err}
+		}
+		store(value, opts.TTL)
+		return flight{value: value}
+	}
+
+	cache.stats.incInFlight()
+	defer cache.stats.decInFlight()
+
+	var f flight
+	for aborts := 0; ; aborts++ {
+		if cachedValue, found := cache.GetContext(ctx, key); found {
+			return convertCachedValue(cachedValue, fnType, hasErrorReturn)
+		}
+		if aborts == maxAbortRetries {
+			// Queueing behind leaders that keep failing is worse than no cache.
+			f = compute()
+			break
+		}
+		var err error
+		f, _, err = cache.sf.Do(context.Background(), key, compute)
+		if err == nil {
+			break
+		}
+	}
+
+	if f.err != nil {
+		// Return the error in the function's expected format
+		return createErrorReturn(fnType, f.err)
+	}
+
+	// Convert the result back to the expected format
+	return convertComputedValue(f.value, fnType, hasErrorReturn)
 }
 
 // extractContextAndArgs extracts context and key args from function arguments
@@ -152,49 +210,6 @@ func extractContextAndArgs(fnType reflect.Type, args []reflect.Value) (context.C
 func hasErrorReturn(fnType reflect.Type) bool {
 	return fnType.NumOut() >= 2 &&
 		fnType.Out(fnType.NumOut()-1).Implements(reflect.TypeOf((*error)(nil)).Elem())
-}
-
-// writeBudget bounds the store write after a call. The computed value outlives its
-// caller's deadline, and waiters sit behind this write, so it gets its own limit.
-const writeBudget = 250 * time.Millisecond
-
-// executeFunctionWithSingleflight executes the function with singleflight pattern
-func executeFunctionWithSingleflight(cache *Cache, ctx context.Context, fnValue reflect.Value, fnType reflect.Type, opts *WrapOptions, args []reflect.Value, key string, hasErrorReturn bool) []reflect.Value {
-	store := func(value any, ttl time.Duration) {
-		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeBudget)
-		defer cancel()
-		_ = cache.SetContext(writeCtx, key, value, ttl)
-	}
-
-	// The write happens here so it runs exactly once, whether or not anyone is waiting.
-	compute := func() (any, error) {
-		value, err := processResults(fnValue.Call(args), hasErrorReturn)
-		if err != nil {
-			if opts.CacheErrors {
-				errorTTL := opts.ErrorTTL
-				if errorTTL == 0 {
-					errorTTL = opts.TTL
-				}
-				store(cachedError{Err: err}, errorTTL)
-			}
-			return nil, err
-		}
-		store(value, opts.TTL)
-		return value, nil
-	}
-
-	// Execute with singleflight
-	cache.stats.incInFlight()
-	defer cache.stats.decInFlight()
-
-	value, err, _ := cache.sf.Do(key, compute)
-	if err != nil {
-		// Return the error in the function's expected format
-		return createErrorReturn(fnType, err)
-	}
-
-	// Convert the result back to the expected format
-	return convertComputedValue(value, fnType, hasErrorReturn)
 }
 
 // processResults processes function results for caching

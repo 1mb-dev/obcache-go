@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - A write to Redis or a hook no longer runs under a cache-wide lock: `Set` issues one command instead of scanning every key, and hooks may call back into the cache
 - `Close` can be called more than once
 - A wrapped call's result is cached after a concurrent miss, and after the caller's deadline passes
+- A wrapped function that panics no longer hangs later calls for that key; waiters retry instead of inheriting the failure
 
 ## [2.0.0] - 2025-10-27
 

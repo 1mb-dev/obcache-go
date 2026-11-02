@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,7 +25,6 @@ func bubbleCache(t *testing.T) *obcache.Cache {
 }
 
 func TestFindingB2(t *testing.T) {
-	suppress(t, "B2")
 	synctest.Test(t, func(t *testing.T) {
 		c := bubbleCache(t)
 		var calls atomic.Int32
@@ -72,6 +72,63 @@ func TestFindingB2(t *testing.T) {
 		}
 		if v, err := w(1); v != "ok" || err != nil {
 			t.Errorf("next call = %q, %v", v, err)
+		}
+	})
+}
+
+func TestFindingGX1(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		var calls atomic.Int32
+		w := obcache.Wrap(c, func(int) (string, error) {
+			if calls.Add(1) == 1 {
+				time.Sleep(10 * time.Millisecond)
+				runtime.Goexit()
+			}
+			return "ok", nil
+		}, opts("goexit")...)
+
+		var wg sync.WaitGroup
+		wg.Go(func() { _, _ = w(1) })
+		time.Sleep(time.Millisecond)
+		if v, err := w(1); v != "ok" || err != nil {
+			t.Errorf("waiter = %q, %v", v, err)
+		}
+		wg.Wait()
+	})
+}
+
+// Callers behind a function that always panics each get a panic, never a zero
+// value, and the calls stay bounded by the number of callers.
+func TestAlwaysPanickingFunction(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := bubbleCache(t)
+		var calls, panicked atomic.Int32
+		w := obcache.Wrap(c, func(int) (string, error) {
+			calls.Add(1)
+			time.Sleep(time.Millisecond)
+			panic("always")
+		}, opts("always")...)
+
+		const callers = 8
+		var wg sync.WaitGroup
+		for range callers {
+			wg.Go(func() {
+				defer func() {
+					if recover() != nil {
+						panicked.Add(1)
+					}
+				}()
+				_, _ = w(1)
+				t.Error("a caller returned without a panic")
+			})
+		}
+		wg.Wait()
+		if panicked.Load() != callers {
+			t.Errorf("panicked = %d, want %d", panicked.Load(), callers)
+		}
+		if n := calls.Load(); n > callers {
+			t.Errorf("underlying calls = %d, want at most %d", n, callers)
 		}
 	})
 }
