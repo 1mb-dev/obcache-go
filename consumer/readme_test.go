@@ -34,7 +34,7 @@ var featureTests = map[string]string{
 
 func read(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- paths are constants in this file
 	if err != nil {
 		t.Fatal(err)
 	}

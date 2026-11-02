@@ -20,13 +20,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// suppress skips a test for a finding not yet fixed. The fixing commit deletes
-// the call, and the helper itself goes before release so a leftover cannot pass.
-func suppress(t *testing.T, id string) {
-	t.Helper()
-	t.Skip("finding " + id)
-}
-
 // opts is the single place every Wrap in this module gets its identity from.
 func opts(name string) []obcache.WrapOption {
 	return []obcache.WrapOption{obcache.WithName(name)}

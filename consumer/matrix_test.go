@@ -186,7 +186,6 @@ func TestMatrix(t *testing.T) {
 		t.Run(b.name, func(t *testing.T) {
 			for _, s := range shapes() {
 				t.Run(s.name, func(t *testing.T) {
-					known(t, b, s)
 					defer func() {
 						if r := recover(); r != nil {
 							t.Errorf("panic: %v", r)
@@ -197,11 +196,6 @@ func TestMatrix(t *testing.T) {
 			}
 		})
 	}
-}
-
-// known suppresses cells for findings not yet fixed.
-func known(t *testing.T, b backend, s shape) {
-	t.Helper()
 }
 
 // TestPinnedLosses asserts what JSON cannot carry on serializing backends, so

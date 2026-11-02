@@ -17,7 +17,7 @@ func TestFindingB1(t *testing.T) {
 	c := memoryCache(t, obcache.NewDefaultConfig())
 	users := obcache.Wrap(c, lookupUser)
 	orders := obcache.Wrap(c, lookupOrder)
-	if a, b := users(1), orders(1); a != "user" || b != order {
+	if a, b := users(1), orders(1); a != user || b != order {
 		t.Errorf("users = %q, orders = %q", a, b)
 	}
 	counts := obcache.Wrap(c, lookupCount)
@@ -26,11 +26,14 @@ func TestFindingB1(t *testing.T) {
 	}
 }
 
-func lookupUser(int) string  { return "user" }
+func lookupUser(int) string  { return user }
 func lookupOrder(int) string { return order }
 func lookupCount(int) int    { return 3 }
 
-const order = "order"
+const (
+	user  = "user"
+	order = "order"
+)
 
 type shard struct{ id string }
 
@@ -66,7 +69,7 @@ func TestIdentityWithoutNames(t *testing.T) {
 	t.Run("already wrapped", func(t *testing.T) {
 		a := obcache.Wrap(c, obcache.Wrap(c, lookupUser))
 		b := obcache.Wrap(c, obcache.Wrap(c, lookupOrder))
-		if x, y := a(1), b(1); x != "user" || y != order {
+		if x, y := a(1), b(1); x != user || y != order {
 			t.Errorf("got %q, %q", x, y)
 		}
 	})
