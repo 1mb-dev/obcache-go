@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 - A wrapped function that panics no longer hangs later calls for that key; waiters retry instead of inheriting the failure
 - A cancelled caller no longer fails other callers waiting on the same key, and with `WithErrorCaching` its cancellation is not cached
 - A waiter stops waiting when its own context ends
+- `Wrap` handles a nil value in an interface return, functions returning only `error`, and variadic functions
 
 ## [2.0.0] - 2025-10-27
 

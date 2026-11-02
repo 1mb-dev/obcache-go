@@ -192,9 +192,6 @@ func TestMatrix(t *testing.T) {
 // known suppresses cells for findings not yet fixed.
 func known(t *testing.T, b backend, s shape) {
 	t.Helper()
-	if s.name == "error-only" {
-		suppress(t, "SH1")
-	}
 	if b.name == redisGzip {
 		suppress(t, "F2")
 	}

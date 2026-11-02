@@ -47,7 +47,6 @@ func TestFindingB4(t *testing.T) {
 }
 
 func TestFindingB5(t *testing.T) {
-	suppress(t, "B5")
 	c := memoryCache(t, obcache.NewDefaultConfig())
 	a := obcache.Wrap(c, func(int) (any, error) { return nil, nil }, opts("any")...)
 	s := obcache.Wrap(c, func(int) (fmt.Stringer, error) { return nil, nil }, opts("stringer")...)
@@ -104,7 +103,6 @@ func TestFindingB8(t *testing.T) {
 }
 
 func TestFindingSH1(t *testing.T) {
-	suppress(t, "SH1")
 	c := memoryCache(t, obcache.NewDefaultConfig())
 
 	t.Run("variadic", func(t *testing.T) {

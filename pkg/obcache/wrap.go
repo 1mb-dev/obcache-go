@@ -116,8 +116,7 @@ const maxAbortRetries = 2
 
 // flight is what a singleflight leader shares with its waiters.
 type flight struct {
-	value         any
-	err           error
+	results       []reflect.Value
 	leaderCtxDone bool
 }
 
@@ -128,10 +127,10 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 
 	// If caching is disabled, call original function directly
 	if opts.DisableCache {
-		return fnValue.Call(args)
+		return call(fnValue, fnType, args)
 	}
 
-	hasErrorReturn := hasErrorReturn(fnType)
+	hasErr := hasErrorReturn(fnType)
 
 	store := func(value any, ttl time.Duration) {
 		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), writeBudget)
@@ -141,34 +140,27 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 
 	// The write happens here so it runs exactly once, whether or not anyone is waiting.
 	compute := func() flight {
-		value, err := processResults(fnValue.Call(args), hasErrorReturn)
-		if err != nil {
+		results := call(fnValue, fnType, args)
+		if hasErr && !results[len(results)-1].IsNil() {
 			if ctx.Err() != nil {
 				// The leader's own cancellation, whatever the function wrapped it in.
-				return flight{err: err, leaderCtxDone: true}
+				return flight{results: results, leaderCtxDone: true}
 			}
 			if opts.CacheErrors {
 				errorTTL := opts.ErrorTTL
 				if errorTTL == 0 {
 					errorTTL = opts.TTL
 				}
-				store(cachedError{Err: err}, errorTTL)
+				store(cachedError{Err: results[len(results)-1].Interface().(error)}, errorTTL)
 			}
-			return flight{err: err}
+			return flight{results: results}
 		}
-		store(value, opts.TTL)
-		return flight{value: value}
-	}
-
-	finish := func(f flight) []reflect.Value {
-		if f.err != nil {
-			return createErrorReturn(fnType, f.err)
-		}
-		return convertComputedValue(f.value, fnType, hasErrorReturn)
+		store(storedValue(results, valueCount(fnType)), opts.TTL)
+		return flight{results: results}
 	}
 
 	waitCtx := ctx
-	if !hasErrorReturn {
+	if !hasErr {
 		waitCtx = context.Background() // no error slot to report a wait timeout through
 	}
 
@@ -177,11 +169,13 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 
 	for aborts := 0; ; aborts++ {
 		if cachedValue, found := cache.GetContext(ctx, key); found {
-			return convertCachedValue(cachedValue, fnType, hasErrorReturn)
+			if results, ok := cachedResults(cachedValue, fnType, hasErr); ok {
+				return results
+			}
 		}
 		if aborts == maxAbortRetries {
 			// Queueing behind leaders that keep failing is worse than no cache.
-			return finish(compute())
+			return compute().results
 		}
 		f, leader, err := cache.sf.Do(waitCtx, key, compute)
 		switch {
@@ -192,8 +186,15 @@ func executeWrappedFunction(cache *Cache, fnValue reflect.Value, fnType reflect.
 		case f.leaderCtxDone && !leader && ctx.Err() == nil:
 			continue
 		}
-		return finish(f)
+		return f.results
 	}
+}
+
+func call(fnValue reflect.Value, fnType reflect.Type, args []reflect.Value) []reflect.Value {
+	if fnType.IsVariadic() {
+		return fnValue.CallSlice(args)
+	}
+	return fnValue.Call(args)
 }
 
 // extractContextAndArgs extracts context and key args from function arguments
@@ -221,126 +222,84 @@ func extractContextAndArgs(fnType reflect.Type, args []reflect.Value) (context.C
 	return ctx, keyArgs
 }
 
-// hasErrorReturn checks if function returns error as last parameter
+var errorType = reflect.TypeFor[error]()
+
+// hasErrorReturn reports whether the last result is an error. A struct error type
+// has no "no error" value, so it counts as an ordinary result.
 func hasErrorReturn(fnType reflect.Type) bool {
-	return fnType.NumOut() >= 2 &&
-		fnType.Out(fnType.NumOut()-1).Implements(reflect.TypeOf((*error)(nil)).Elem())
+	n := fnType.NumOut()
+	if n == 0 {
+		return false
+	}
+	last := fnType.Out(n - 1)
+	return last.Implements(errorType) && (last.Kind() == reflect.Interface || last.Kind() == reflect.Pointer)
 }
 
-// processResults processes function results for caching
-func processResults(results []reflect.Value, hasErrorReturn bool) (any, error) {
-	if hasErrorReturn {
-		return processResultsWithError(results)
+// valueCount is the number of results excluding a trailing error.
+func valueCount(fnType reflect.Type) int {
+	if hasErrorReturn(fnType) {
+		return fnType.NumOut() - 1
 	}
-	return processResultsWithoutError(results)
+	return fnType.NumOut()
 }
 
-// processResultsWithError handles results from functions that return error
-func processResultsWithError(results []reflect.Value) (any, error) {
-	// Handle (T, error) return pattern
-	errResult := results[len(results)-1]
-	if !errResult.IsNil() {
-		// Return error for conditional caching (handled in caller)
-		return nil, errResult.Interface().(error)
+// storedValue is the form results take in the store and in hooks.
+func storedValue(results []reflect.Value, n int) any {
+	switch n {
+	case 0:
+		return nil
+	case 1:
+		return results[0].Interface()
 	}
-
-	// Cache the successful result (all values except error)
-	if len(results) == 2 {
-		// Single value + error
-		return results[0].Interface(), nil
-	}
-	// Multiple values + error
-	values := make([]any, len(results)-1)
-	for i := 0; i < len(results)-1; i++ {
+	values := make([]any, n)
+	for i := range n {
 		values[i] = results[i].Interface()
 	}
-	return values, nil
+	return values
 }
 
-// processResultsWithoutError handles results from functions without error return
-func processResultsWithoutError(results []reflect.Value) (any, error) {
-	if len(results) == 1 {
-		return results[0].Interface(), nil
-	}
-	// Multiple return values
-	values := make([]any, len(results))
-	for i, result := range results {
-		values[i] = result.Interface()
-	}
-	return values, nil
-}
-
-// convertCachedValue converts a cached value back to the expected return format
-func convertCachedValue(cachedValue any, fnType reflect.Type, hasErrorReturn bool) []reflect.Value {
-	// Check if this is a cached error
-	if ce, ok := cachedValue.(cachedError); ok {
-		return createErrorReturn(fnType, ce.Err)
-	}
-
-	numOut := fnType.NumOut()
-	results := make([]reflect.Value, numOut)
-
-	if hasErrorReturn {
-		// Set error to nil
-		results[numOut-1] = reflect.Zero(fnType.Out(numOut - 1))
-
-		if numOut == 2 {
-			// Single value + error
-			results[0] = reflect.ValueOf(cachedValue)
-		} else {
-			// Multiple values + error
-			values := cachedValue.([]any)
-			for i := 0; i < numOut-1; i++ {
-				results[i] = reflect.ValueOf(values[i])
-			}
+// cachedResults rebuilds a call's results from a stored value. A value that does
+// not fit the function's results is a miss, never a panic.
+func cachedResults(v any, fnType reflect.Type, hasErr bool) ([]reflect.Value, bool) {
+	if ce, isErr := v.(cachedError); isErr {
+		if !hasErr {
+			return nil, false
 		}
-	} else {
-		// No error return
-		if numOut == 1 {
-			results[0] = reflect.ValueOf(cachedValue)
-		} else {
-			values := cachedValue.([]any)
-			for i, value := range values {
-				results[i] = reflect.ValueOf(value)
-			}
+		return createErrorReturn(fnType, ce.Err), true
+	}
+
+	results := make([]reflect.Value, fnType.NumOut())
+	if hasErr {
+		results[len(results)-1] = reflect.Zero(fnType.Out(len(results) - 1))
+	}
+	n := valueCount(fnType)
+	if n == 0 {
+		return results, true
+	}
+	values := []any{v}
+	if n > 1 {
+		var ok bool
+		if values, ok = v.([]any); !ok || len(values) != n {
+			return nil, false
 		}
 	}
-
-	return results
-}
-
-// convertComputedValue converts a computed value to the expected return format
-func convertComputedValue(value any, fnType reflect.Type, hasErrorReturn bool) []reflect.Value {
-	numOut := fnType.NumOut()
-	results := make([]reflect.Value, numOut)
-
-	if hasErrorReturn {
-		// Set error to nil (since we only cache successful results)
-		results[numOut-1] = reflect.Zero(fnType.Out(numOut - 1))
-
-		if numOut == 2 {
-			// Single value + error
-			results[0] = reflect.ValueOf(value)
-		} else {
-			// Multiple values + error
-			values := value.([]any)
-			for i := 0; i < numOut-1; i++ {
-				results[i] = reflect.ValueOf(values[i])
+	for i := range n {
+		t := fnType.Out(i)
+		if values[i] == nil {
+			switch t.Kind() {
+			case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+				results[i] = reflect.Zero(t)
+				continue
 			}
+			return nil, false
 		}
-	} else {
-		// No error return
-		if numOut == 1 {
-			results[0] = reflect.ValueOf(value)
-		} else {
-			values := value.([]any)
-			for i, value := range values {
-				results[i] = reflect.ValueOf(value)
-			}
+		rv := reflect.ValueOf(values[i])
+		if !rv.Type().AssignableTo(t) {
+			return nil, false
 		}
+		results[i] = rv.Convert(t)
 	}
-
-	return results
+	return results, true
 }
 
 // createErrorReturn creates a return value slice with the given error
@@ -406,16 +365,12 @@ func WrapFunc2WithError[T1, T2, R any](cache *Cache, fn func(T1, T2) (R, error),
 
 // ValidateWrappableFunction checks if a function can be wrapped
 // This is useful for providing better error messages at runtime
+// It sees no cache, so it cannot report refusals that depend on the store
 func ValidateWrappableFunction(fn any) error {
 	fnType := reflect.TypeOf(fn)
 
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("not a function: %T", fn)
-	}
-
-	// Check if function is variadic (not currently supported)
-	if fnType.IsVariadic() {
-		return fmt.Errorf("variadic functions are not currently supported")
 	}
 
 	// Validate return types

@@ -357,7 +357,6 @@ func TestValidateWrappableFunction(t *testing.T) {
 	}{
 		{"not a function", "non-function"},
 		{func() {}, "no return values"},
-		{func(x int, _ ...string) int { return x }, "variadic function"},
 		{func() (int, string) { return 1, "test" }, "multiple returns without error"},
 	}
 
